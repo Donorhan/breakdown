@@ -80,6 +80,7 @@ local gameConfig = {
             exteriorColor = Color(160, 160, 160),
         },
         ui = {
+            backgroundColor = Color(42, 50, 61),
             hungerBar = {
                 width = 30,
                 height = 250,
@@ -1194,8 +1195,9 @@ uiManager = {
 
         if uiManager._HUDScreen then
             if uiManager._hungerBar then
-                local hungerRatio = 1 - (playerManager._hunger / playerManager._hungerMax)
-                uiManager._hungerBar.Height = gameConfig.theme.ui.hungerBar.height * hungerRatio
+                local hungerRatio = math.min(1, math.max(0, 1 - (playerManager._hunger / playerManager._hungerMax)))
+                local maxHeight = gameConfig.theme.ui.hungerBar.height - 8
+                uiManager._hungerBar.Height = maxHeight * hungerRatio
 
                 local startHue = gameConfig.theme.ui.hungerBar.colorHSL[1]
                 local endHue = 0
@@ -1333,8 +1335,10 @@ uiManager = {
     end,
     showHUD = function()
         local uiPadding = uitheme.current.padding * 2
+        local hudBackgroundColor = gameConfig.theme.ui.backgroundColor:Copy()
+        hudBackgroundColor.A = 150
 
-        local frame = ui:createFrame(Color(42, 50, 61, 150))
+        local frame = ui:createFrame(hudBackgroundColor)
         uiManager._HUDScreen = frame
         frame.Width = 95
         frame.Height = 50
@@ -1347,7 +1351,7 @@ uiManager = {
 
         -- Hunger bar
         local barPadding = 8
-        local hungerBarBackground = ui:createFrame(Color(42, 50, 61, 150))
+        local hungerBarBackground = ui:createFrame(hudBackgroundColor)
         hungerBarBackground:setParent(frame)
         hungerBarBackground.Width = gameConfig.theme.ui.hungerBar.width
         hungerBarBackground.Height = gameConfig.theme.ui.hungerBar.height
@@ -1369,7 +1373,7 @@ uiManager = {
 
         local uiPadding = uitheme.current.padding
 
-        local frame = ui:createFrame(Color(42, 50, 61))
+        local frame = ui:createFrame(gameConfig.theme.ui.backgroundColor)
         uiManager._gameOverScreen = frame
 
         frame.Width = 400
@@ -1434,7 +1438,7 @@ uiManager = {
         end
 
         local uiPadding = uitheme.current.padding
-        local frame = ui:createFrame(Color(42, 50, 61))
+        local frame = ui:createFrame(gameConfig.theme.ui.backgroundColor)
 
         frame.Width = 400
         frame.Height = 430
