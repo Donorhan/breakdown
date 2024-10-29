@@ -79,16 +79,23 @@ local gameConfig = {
             wallLightness = 36,
             exteriorColor = Color(160, 160, 160),
         },
+        ui = {
+            hungerBar = {
+                width = 30,
+                height = 250,
+                colorHSL = { 131, 56, 46 },
+            }
+        },
         roomOffsetZ = ROOM_DIMENSIONS.Z * 0.5,
         skybox = "https://i.ibb.co/hgRhk0t/Standard-Cube-Map.png",
     },
     player = {
-        defaultEnergy = 15,
         defaultLife = 1,
         defaultSpeed = 67,
         defaultJumpHeight = 200,
         defaultDigForce = -15000,
         defaultHungerMax = 15, -- 15 seconds to find food
+        foodBonusTimeAdded = 8, -- Time added to the hunger when eating food bonus
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
     },
@@ -228,7 +235,7 @@ spawners = {
         if bonusType == GAME_BONUSES.DIG_FAST then
             bonus = Shape(Items.littlecreator.dumbell)
             bonus.LocalRotation.X = 15
-            callback = function()
+            callback = function(_)
                 sfx("coin_1", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
                 playerManager.startDigging(5)
             end
@@ -236,15 +243,16 @@ spawners = {
             bonus = Shape(Items.chocomatte.ramen)
             bonus.LocalRotation.X = 0.45
             bonus.LocalScale = Number3(0.6, 0.6, 0.6)
-            callback = function()
+            callback = function(_)
                 sfx("eating_4", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-                playerManager._energy = playerManager._energy + gameConfig.player.defaultEnergy
+                playerManager._hunger = math.max(0, playerManager._hunger - gameConfig.player.foodBonusTimeAdded)
             end
         elseif bonusType == GAME_BONUSES.COIN then
             bonus = Shape(Items.vico.coin)
-            callback = function()
+            callback = function(coin)
                 sfx("coin_1", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
                 gameManager._money = gameManager._money + 1
+                spawners.coinPool:release(coin)
             end
         end
 
@@ -280,12 +288,8 @@ spawners = {
 
             explosionEmitter.Position = self.Position
             explosionEmitter:spawn(10)
-            callback()
+            callback(self)
             self:RemoveFromParent()
-
-            if self.type == GAME_BONUSES.COIN then
-                spawners.coinPool:release(self)
-            end
         end
 
         return bonus
@@ -977,7 +981,6 @@ playerManager = {
     _digging = false,
     _diggingForceAccumulator = 0,
     _lastFloorReached = 0,
-    _energy = gameConfig.player.defaultEnergy,
     _life = 1,
     _jumpHeight = gameConfig.player.defaultJumpHeight,
     _hasHelmet = false,
@@ -1057,7 +1060,6 @@ playerManager = {
         playerManager._digging = false
         playerManager._diggingForceAccumulator = 0
         playerManager._lastFloorReached = 0
-        playerManager._energy = gameConfig.player.defaultEnergy
         playerManager._life = gameConfig.player.defaultLife
         playerManager._hunger = 0
         playerManager._hungerMax = gameConfig.player.defaultHungerMax
@@ -1183,9 +1185,6 @@ uiManager = {
     init = function()
     end,
     update = function(self, _)
-        if uiManager._energyBar then
-            uiManager._energyBar.Width = uiManager.POWER_BAR_WIDTH * (playerManager._energy / gameConfig.player.defaultEnergy)
-        end
         if uiManager._moneyCountText and gameManager._money ~= uiManager._previousMoneyCount then
             uiManager._moneyCountText.Text = gameManager._money
             uiManager._previousMoneyCount = gameManager._money
@@ -1194,15 +1193,20 @@ uiManager = {
         end
 
         if uiManager._HUDScreen then
-            local currentHearts = #uiManager._lifeShapes
-            if playerManager._life < currentHearts then
-                for i = currentHearts, playerManager._life + 1, -1 do
-                    local heart = table.remove(uiManager._lifeShapes)
-                    if heart then
-                        heart:remove()
-                    end
-                end
-            end            
+            if uiManager._hungerBar then
+                local hungerRatio = 1 - (playerManager._hunger / playerManager._hungerMax)
+                uiManager._hungerBar.Height = gameConfig.theme.ui.hungerBar.height * hungerRatio
+
+                local startHue = gameConfig.theme.ui.hungerBar.colorHSL[1]
+                local endHue = 0
+                local lerpedHue = startHue * hungerRatio + endHue * (1 - hungerRatio)
+                local color = helpers.colors.HSLToRGB(
+                    lerpedHue,
+                    gameConfig.theme.ui.hungerBar.colorHSL[2],
+                    gameConfig.theme.ui.hungerBar.colorHSL[3]
+                )
+                uiManager._hungerBar.Color = color
+            end
         end
     end,
     hideAllScreens = function()
@@ -1330,7 +1334,7 @@ uiManager = {
     showHUD = function()
         local uiPadding = uitheme.current.padding * 2
 
-        local frame = ui:createFrame(Color(42, 50, 61, 105))
+        local frame = ui:createFrame(Color(42, 50, 61, 150))
         uiManager._HUDScreen = frame
         frame.Width = 95
         frame.Height = 50
@@ -1340,6 +1344,22 @@ uiManager = {
         moneyBloc:setParent(frame)
         moneyBloc.LocalPosition.X = uiPadding
         moneyBloc.LocalPosition.Y = uiPadding
+
+        -- Hunger bar
+        local barPadding = 8
+        local hungerBarBackground = ui:createFrame(Color(42, 50, 61, 150))
+        hungerBarBackground:setParent(frame)
+        hungerBarBackground.Width = gameConfig.theme.ui.hungerBar.width
+        hungerBarBackground.Height = gameConfig.theme.ui.hungerBar.height
+        hungerBarBackground.LocalPosition = Number3(frame.Width - hungerBarBackground.Width * 0.5 - uiPadding, Screen.Height * 0.5 - hungerBarBackground.Height * 0.5, 0)
+        uiManager._hungerBarBackground = hungerBarBackground
+
+        local hungerBar = ui:createFrame(gameConfig.theme.ui.hungerBar.highColor)
+        hungerBar:setParent(hungerBarBackground)
+        hungerBar.Width = gameConfig.theme.ui.hungerBar.width - barPadding
+        hungerBar.Height = gameConfig.theme.ui.hungerBar.height - barPadding
+        hungerBar.LocalPosition = Number3(barPadding * 0.5, barPadding * 0.5, 0)
+        uiManager._hungerBar = hungerBar
     end,
     showGameOverScreen = function()
         if uiManager._gameOverScreen then
