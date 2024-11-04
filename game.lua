@@ -1,5 +1,6 @@
 Modules = {
     ambience = "ambience",
+    avatar = "avatar",
     bundle = "bundle",
     ease = "ease",
     particles = "particles",
@@ -9,9 +10,9 @@ Modules = {
     explode = "github.com/aduermael/modzh/explode:b9e5d20",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
     niceLeaderboardModule = "github.com/aduermael/modzh/niceleaderboard",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:c8efa90",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:c8efa90",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:c8efa90",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:39f1c19",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:39f1c19",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:39f1c19",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -51,6 +52,7 @@ local COLLISION_GROUP_WALL = CollisionGroups(3)
 local COLLISION_GROUP_BONUS = CollisionGroups(4)
 local COLLISION_GROUP_ENNEMY = CollisionGroups(5)
 local COLLISION_GROUP_PARTICLES = CollisionGroups(6)
+local COLLISION_GROUP_PROPS = CollisionGroups(7)
 
 local spawners = {}
 local upgrades = {}
@@ -77,7 +79,7 @@ local gameConfig = {
             saturation = 18,
             backgroundLightness = 51,
             wallLightness = 36,
-            exteriorColor = Color(160, 160, 160),
+            exteriorColor = Color(150, 150, 150),
         },
         ui = {
             backgroundColor = Color(42, 50, 61),
@@ -207,12 +209,10 @@ spawners = {
     groundParticlePool = nil,
     bonusesRotation = 0,
     lastFoodSpawnedFloorCount = 0,
-
     init = function ()
         spawners.coinPool = poolSystem.create(35, function() return spawners.createBonus(GAME_BONUSES.COIN) end, true)
         spawners.groundParticlePool = poolSystem.create(30, spawners.createGroundParticle, true)
     end,
-
     randomPositionInRoom = function(paddingX, paddingY)
         local x = math.random(-ROOM_DIMENSIONS.X / 2.0 + paddingX, ROOM_DIMENSIONS.X / 2.0 - paddingX)
         local y = paddingY
@@ -220,7 +220,6 @@ spawners = {
 
         return Number3(x, y, z)
     end,
-
     createGroundParticle = function()
         local oneCube = MutableShape()
         oneCube:AddBlock(Color.White, 0, 0, 0)
@@ -228,7 +227,32 @@ spawners = {
         oneCube.CollidesWithMask = 0
         return oneCube
     end,
+    breakPropParticleEffect = function(position)
+        local explodeParticles = particles:newEmitter({
+            life = function()
+                return 0.75
+            end,
+            velocity = function()
+                return Number3(40 * math.random(-1, 1), math.random(100, 250), 20 * math.random(-1, 1))
+            end,
+            color = function()
+                return Color(255, 255, 255)
+            end,
+            scale = function()
+                return 1.3
+            end,
+            acceleration = function()
+                return Config.ConstantAcceleration
+            end,
+        })
+        explodeParticles:SetParent(World)
+        explodeParticles.Position = position
+        explodeParticles:spawn(30)
 
+        Timer(0.75, false, function()
+            explodeParticles:RemoveFromParent()
+        end)
+    end,
     createBonus = function(bonusType)
         local bonus
         local callback
@@ -295,7 +319,6 @@ spawners = {
 
         return bonus
     end,
-
     spawnBonus = function(room, bonusType)
         if bonusType == nil then
             bonusType = GAME_BONUSES.DIG_FAST
@@ -309,7 +332,6 @@ spawners = {
 
         return bonus
     end,
-
     spawnCoins = function(room)
         local position = spawners.randomPositionInRoom(40, 0)
         local startX = position.X
@@ -349,13 +371,12 @@ spawners = {
             end
         end
     end,
-
     spawnEnnemy = function(room, position)
         local ennemy = Shape(Items.chocomatte.police_martin)
         ennemy:SetParent(room.propsContainer)
         ennemy.Physics = PhysicsMode.Dynamic
         ennemy.CollisionGroups = COLLISION_GROUP_ENNEMY
-        ennemy.CollidesWithGroups = COLLISION_GROUP_WALL + COLLISION_GROUP_FLOOR_BELOW
+        ennemy.CollidesWithGroups = COLLISION_GROUP_WALL + COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_PROPS
         ennemy.Scale = Number3(0.5, 0.5, 0.5)
         ennemy.Pivot = Number3(ennemy.Width * 0.5, 0, ennemy.Depth * 0.5)
         ennemy.lifeTime = 0
@@ -427,8 +448,10 @@ spawners = {
         end
 
         ennemy.OnCollisionBegin = function(self, collider, normal)
-            if collider.CollisionGroups == COLLISION_GROUP_WALL then
-                ennemy.setDirectionLeft(self.Position.X > 0)
+            if collider.CollisionGroups == COLLISION_GROUP_WALL or collider.CollisionGroups == COLLISION_GROUP_PROPS then
+                if math.abs(normal.X) > 0.5 then
+                    ennemy.setDirectionLeft(self.Position.X > 0)
+                end
             elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
                 if self.lifeTime > 1.0 then
                     if normal.Y >= 1.0 then
@@ -446,7 +469,6 @@ spawners = {
 
         return ennemy
     end,
-
     spawnGroundParticle = function(position, color)
         local pcube = spawners.groundParticlePool:acquire()
         pcube.CollisionGroups = COLLISION_GROUP_PARTICLES
@@ -469,7 +491,6 @@ spawners = {
 
         return pcube
     end,
-
     update = function(dt)
         spawners.bonusesRotation = spawners.bonusesRotation - gameConfig.bonusesRotationSpeed * dt
         if spawners.bonusesRotation > 2 * math.pi then
@@ -615,7 +636,7 @@ levelManager = {
 
         local backgroundColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.backgroundLightness)
         local wallColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.wallLightness)
-        local bottomColor = nil
+        local bottomColor = Color(170, 170, 170)
 
         if groundOnly then
             bottomColor = nil
@@ -715,168 +736,184 @@ levelManager = {
         local impactPosition = impact.Block.Coordinates
         floorCollider.room:createHoleFromBlockCoordinates(Face.Bottom, impactPosition, gameConfig.player.floorImpactSize)
     end,
+    damageProp = function(prop, _)
+        prop.life = prop.life - 1
+        if prop.life > 0 then
+            local soundDamage = prop.soundDamage or "punch_1"
+            sfx(soundDamage, { Position = prop.Position, Pitch = 0.8 + math.random() * 0.1, Volume = 0.55 })
+            helpers.shape.flash(prop, Color.White, 0.25)
+        else
+            local destroySound = prop.destroySound or "gun_shot_2"
+            sfx(destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.55 })
+            spawners.breakPropParticleEffect(prop.Position)
+            prop:RemoveFromParent()
+        end
+    end,
     addProps = function (floor, groundOnly)
         math.randomseed(os.time() + math.random(0, 360))
         local randomConfig = math.random(1, 5)
 
-        if groundOnly then
-            local propDesk = Shape(Items.uevoxel.antena02)
-            propDesk:SetParent(floor)
-            propDesk.Physics = PhysicsMode.Disabled
-            propDesk.Scale = Number3(0.6, 0.6, 0.6)
-            propDesk.LocalRotation.Y = 9
-            propDesk.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 13, propDesk.Height * 0.5 - 3, -15)
+        local prepareProp = function(prop, position, soundDamage, destroySound)
+            prop.life = 1
+            prop:SetParent(floor)
+            prop.CollisionGroups = COLLISION_GROUP_PROPS
+            prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
+            prop.soundDamage = soundDamage
+            prop.destroySound = destroySound
+        end
 
-            local plant = Shape(Items.kooow.solarpanel)
-            plant:SetParent(floor)
-            plant.Physics = PhysicsMode.Disabled
-            plant.Scale = Number3(0.5, 0.5, 0.5)
-            plant.LocalRotation.Y = 0
-            plant.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, plant.Height * 0.5 - 8, -15)
+        if groundOnly then
+            local prop = Shape(Items.uevoxel.antena02)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = 9
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 13, prop.Height * 0.5 - 3, -15)
+
+            prop = Shape(Items.kooow.solarpanel)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, prop.Height * 0.5 - 8, -15)
+
             return
         end
 
         if randomConfig == 1 then
-            local propDesk = Shape(Items.claire.desk7)
-            propDesk:SetParent(floor)
-            propDesk.Physics = PhysicsMode.Disabled
-            propDesk.Scale = Number3(0.6, 0.6, 0.6)
-            propDesk.LocalRotation.Y = 90
-            propDesk.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, propDesk.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            local prop = Shape(Items.claire.desk7)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = 90
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
-            local propSofa = Shape(Items.claire.sofa2)
-            propSofa:SetParent(floor)
-            propSofa.Physics = PhysicsMode.Disabled
-            propSofa.LocalRotation.Y = math.pi
-            propSofa.LocalPosition = Number3(0, propSofa.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            prop = Shape(Items.claire.sofa2)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.LocalRotation.Y = math.pi
+            prop.LocalPosition = Number3(0, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
-            local propShelf = Shape(Items.piaa.book_shelf)
-            propShelf:SetParent(floor)
-            propShelf.Physics = PhysicsMode.Disabled
-            propShelf.Scale = Number3(0.5, 0.5, 0.5)
-            propShelf.Pivot = Number3(0, propShelf.Height * 0.5, 0)
-            propShelf.LocalRotation.Y = 0
-            propShelf.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, propShelf.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            prop = Shape(Items.piaa.book_shelf)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.Pivot = Number3(0, prop.Height * 0.5, 0)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
-            local propCabinet = Shape(Items.claire.office_cabinet)
-            propCabinet:SetParent(floor)
-            propCabinet.Scale = Number3(0.6, 0.6, 0.6)
-            propCabinet.LocalRotation.Y = 0
-            propCabinet.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - propCabinet.Width * 0.5 - 4, propCabinet.Height * 0.5 - 5, 0)
-            propCabinet.Physics = PhysicsMode.Dynamic
+            prop = Shape(Items.claire.office_cabinet)
+            prepareProp(prop, Number3.Zero, "hitmarker_2", "gun_shot_2")
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Width * 0.5 - 4, prop.Height * 0.5 - 5, 0)
+            prop.Physics = PhysicsMode.Static
+            prop.life = 2
 
-            local propShelf = Shape(Items.boumety.shelf3)
-            propShelf:SetParent(floor)
-            propShelf.Physics = PhysicsMode.Disabled
-            propShelf.Scale = Number3(0.5, 0.5, 0.5)
-            propShelf.LocalRotation.Y = 0
-            propShelf.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - propShelf.Depth)
-
+            prop = Shape(Items.boumety.shelf3)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth)
         elseif randomConfig == 2 then
-            local propDesk = Shape(Items.claire.desk7)
-            propDesk:SetParent(floor)
-            propDesk.Physics = PhysicsMode.Disabled
-            propDesk.Scale = Number3(0.6, 0.6, 0.6)
-            propDesk.LocalRotation.Y = -90
-            propDesk.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, propDesk.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
+            local prop = Shape(Items.claire.desk7)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = -90
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
 
-            local propSofa = Shape(Items.claire.sofa2)
-            propSofa:SetParent(floor)
-            propSofa.Physics = PhysicsMode.Disabled
-            propSofa.LocalRotation.Y = math.pi / 2
-            propSofa.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, propSofa.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
+            prop = Shape(Items.claire.sofa2)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.LocalRotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
 
-            local propDoor = Shape(Items.claire.office_door)
-            propDoor:SetParent(floor)
-            propDoor.Physics = PhysicsMode.Disabled
-            propDoor.LocalRotation.Y = 0
-            propDoor.Pivot = Number3(propDoor.Width * 0.5, 0, propDoor.Depth * 0.5)
-            propDoor.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
-            propDoor.Scale = Number3(1.7, 1.7, 1.7)
+            prop = Shape(Items.claire.office_door)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.LocalRotation.Y = 0
+            prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            prop.Scale = Number3(1.7, 1.7, 1.7)
 
-            local propVendingMachine = Shape(Items.pratamacam.vending_machine)
-            propVendingMachine:SetParent(floor)
-            propVendingMachine.Physics = PhysicsMode.Disabled
-            propVendingMachine.Pivot = Number3(propDoor.Width * 0.5, 0, propDoor.Depth * 0.5)
-            propVendingMachine.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 45, 0, ROOM_DIMENSIONS.Z * 0.5 - 15)
-            propVendingMachine.Scale = Number3(0.7, 0.7, 0.7)
+            prop = Shape(Items.pratamacam.vending_machine)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 45, 0, ROOM_DIMENSIONS.Z * 0.5 - 15)
+            prop.Scale = Number3(0.7, 0.7, 0.7)
         elseif randomConfig == 3 then
-            local propDesk = Shape(Items.claire.desk7)
-            propDesk:SetParent(floor)
-            propDesk.Physics = PhysicsMode.Disabled
-            propDesk.Scale = Number3(0.6, 0.6, 0.6)
-            propDesk.LocalRotation.Y = 0
-            propDesk.LocalPosition = Number3(-38, propDesk.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            local prop = Shape(Items.claire.desk7)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(-38, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
 
-            local propDeskk = Shape(Items.claire.desk7)
-            propDeskk:SetParent(floor)
-            propDeskk.Physics = PhysicsMode.Disabled
-            propDeskk.Scale = Number3(0.6, 0.6, 0.6)
-            propDeskk.LocalRotation.Y = 0
-            propDeskk.LocalPosition = Number3(-17, propDeskk.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            prop = Shape(Items.claire.desk7)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(-17, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
 
-            local propSofa = Shape(Items.claire.sofa2)
-            propSofa:SetParent(floor)
-            propSofa.Physics = PhysicsMode.Disabled
-            propSofa.LocalRotation.Y = math.pi / 2
-            propSofa.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, propSofa.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
+            prop = Shape(Items.claire.sofa2)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.LocalRotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
 
-            local propShelf = Shape(Items.piaa.book_shelf)
-            propShelf:SetParent(floor)
-            propShelf.Physics = PhysicsMode.Static
-            propShelf.Scale = Number3(0.5, 0.5, 0.5)
-            propShelf.LocalRotation.Y = math.pi / 2
-            propShelf.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 9,  propShelf.Height * 0.5 - 12, 8)
+            prop = Shape(Items.piaa.book_shelf)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Static
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 9,  prop.Height * 0.5 - 12, 8)
 
-            local propDoor = Shape(Items.claire.office_door)
-            propDoor:SetParent(floor)
-            propDoor.Physics = PhysicsMode.Disabled
-            propDoor.LocalRotation.Y = 0
-            propDoor.Pivot = Number3(propDoor.Width * 0.5, 0, propDoor.Depth * 0.5)
-            propDoor.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
-            propDoor.Scale = Number3(1.7, 1.7, 1.7)
+            prop = Shape(Items.claire.office_door)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.LocalRotation.Y = 0
+            prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            prop.Scale = Number3(1.7, 1.7, 1.7)
         elseif randomConfig == 4 then
-            local propBox = Shape(Items.kooow.cardboard_box_long)
-            propBox:SetParent(floor)
-            propBox.Physics = PhysicsMode.Disabled
-            propBox.Scale = Number3(0.5, 0.5, 0.5)
-            propBox.LocalRotation.Y = -0.5
-            propBox.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 25, 0, 5)
+            local prop = Shape(Items.kooow.cardboard_box_long)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = -0.5
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 25, 0, 5)
 
-            propBox = propBox:Copy()
-            propBox:SetParent(floor)
-            propBox.Physics = PhysicsMode.Disabled
-            propBox.Scale = Number3(0.5, 0.5, 0.5)
-            propBox.LocalRotation.Y = -0.95
-            propBox.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, 0, -1)
+            prop = prop:Copy()
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = -0.95
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, 0, -1)
 
-            propBox = Shape(Items.kooow.cardboard_box_small)
-            propBox:SetParent(floor)
-            propBox.Physics = PhysicsMode.Disabled
-            propBox.Scale = Number3(0.5, 0.5, 0.5)
-            propBox.LocalRotation.Y = -0.5
-            propBox.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 21, 7, 5)
+            prop = Shape(Items.kooow.cardboard_box_small)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = -0.5
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 21, 7, 5)
         elseif randomConfig == 5 then
-            local propBox = Shape(Items.kooow.cardboard_box_long)
-            propBox:SetParent(floor)
-            propBox.Physics = PhysicsMode.Disabled
-            propBox.Scale = Number3(0.5, 0.5, 0.5)
-            propBox.LocalRotation.Y = -2
-            propBox.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 25, 0, 5)
+            local prop = Shape(Items.kooow.cardboard_box_long)
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = -2
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 35, 0, 4)
 
-            propBox = propBox:Copy()
-            propBox:SetParent(floor)
-            propBox.Physics = PhysicsMode.Disabled
-            propBox.Scale = Number3(0.5, 0.5, 0.5)
-            propBox.LocalRotation.Y = -6
-            propBox.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 33, 0, 2)
-
-            propBox = Shape(Items.kooow.cardboard_box_small)
-            propBox:SetParent(floor)
-            propBox.Physics = PhysicsMode.Disabled
-            propBox.Scale = Number3(0.5, 0.5, 0.5)
-            propBox.LocalRotation.Y = -0.7
-            propBox.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 21, 0, 0)
+            prop = prop:Copy()
+            prepareProp(prop)
+            prop.Physics = PhysicsMode.Disabled
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = -6
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 33, 0, 3)
         end
     end,
     addFloorBonuses = function(floor)
@@ -1084,6 +1121,17 @@ playerManager = {
         end
     end,
     collisionBegin = function(self, collider, normal)
+        local inverseDirection = function (direction)
+            local newDirection = direction or -Player.Motion.X
+            if newDirection < 0 then
+                Player.Motion:Set(-playerManager._speed, 0, 0)
+                ease:linear(Player.Rotation, 0.2).Y = math.rad(-90 + 360)
+            else
+                Player.Motion:Set(playerManager._speed, 0, 0)
+                ease:linear(Player.Rotation, 0.2).Y = math.rad(90)
+            end
+        end
+
         if collider.CollisionGroups == COLLISION_GROUP_WALL then
             sfx("walk_concrete_1", {
                 Position = Player.Position,
@@ -1091,14 +1139,7 @@ playerManager = {
                 Pitch = 0.4 + math.random() * 0.2,
                 Spatialized = true,
             })
-
-            if Player.Position.X > 0 then
-                Player.Motion:Set(-playerManager._speed, 0, 0)
-                ease:linear(Player.Rotation, 0.2).Y = math.rad(-90 + 360)
-            else
-                Player.Motion:Set(playerManager._speed, 0, 0)
-                ease:linear(Player.Rotation, 0.2).Y = math.rad(90)
-            end
+            inverseDirection()
         elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
             if playerManager._digging then
                 if playerManager._diggingForceAccumulator > 0 then
@@ -1121,6 +1162,17 @@ playerManager = {
             end
 
             playerManager.takeDamage(1, Number2(-self.Motion.X * 20, 200))
+        elseif collider.CollisionGroups == COLLISION_GROUP_PROPS then
+            if not playerManager._digging then
+                inverseDirection()
+                return
+            end
+
+            gameManager._cameraContainer.shake(2)
+            levelManager.damageProp(collider, 1)
+            playerManager.stopDigging()
+            Player.Velocity.Y = 150
+			Client:HapticFeedback()
         end
     end,
     takeDamage = function(damageCount, knockback)
@@ -1152,10 +1204,12 @@ playerManager = {
         -- Collisions can move player's depth so we must fix it here to avoid weird behaviors
         Player.Position.Z = 0
 
-        playerManager._hunger = playerManager._hunger + dt
-        if playerManager._hunger >= playerManager._hungerMax then
-            gameManager.endGame(GAME_DEAD_REASON.STARVING)
-            return
+        if playerManager._lastFloorReached < -1 then
+            playerManager._hunger = playerManager._hunger + dt
+            if playerManager._hunger >= playerManager._hungerMax then
+                gameManager.endGame(GAME_DEAD_REASON.STARVING)
+                return
+            end
         end
 
         if playerManager._life <= 0 then
@@ -1276,7 +1330,7 @@ uiManager = {
                 local upgrade = upgrades[upgradeKey]
                 local currentLevel = playerManager._upgrades[upgradeKey] + 1
                 local nextLevel = upgrade.levels[currentLevel]
-    
+
                 local upgradeFrame = ui:createFrame(Color(60, 70, 80))
                 upgradeFrame.Width = frame.Width
                 upgradeFrame.Height = 65
@@ -1507,7 +1561,7 @@ Client.Tick = function(dt)
     uiManager:update(dt)
 end
 
-Pointer.Click = function()
+Pointer.Down = function()
     if not gameManager._playing then
         return
     end
