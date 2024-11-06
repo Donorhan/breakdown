@@ -10,10 +10,10 @@ Modules = {
     ui = "uikit",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
 	niceLeaderboardModule = "github.com/aduermael/modzh/niceleaderboard",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:5361b46",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:5361b46",
-    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:5361b46",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:5361b46",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:d9bfc5c",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:d9bfc5c",
+    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:d9bfc5c",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:d9bfc5c",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -39,6 +39,13 @@ Config = {
         "kooow.solarpanel",
         "chocomatte.ramen",
         "minadune.spikes",
+        "claire.kitchen_counter",
+        "kooow.table_round_gwcloth",
+        "claire.painting15",
+        "claire.painting6",
+        "uevoxel.gym01",
+        "chocomatte.treadmill",
+        "uevoxel.couch",
     },
 }
 
@@ -112,6 +119,15 @@ local gameConfig = {
     },
     avatars = {},
 }
+
+
+-----------------
+--- Helpers
+-----------------
+local followPlayerPosition = function (avatar)
+    local targetRotation = helpers.math.lookAt(avatar.Position, Player.Position)
+    avatar.Head.Rotation = targetRotation
+end
 
 -----------------
 -- Spawners
@@ -484,6 +500,8 @@ gameManager = {
         -- Load avatars
         gameConfig.avatars["gaetan"] = avatar:get({ usernameOrId = "gaetan", eyeBlinks = true, defaultAnimations = true })
         gameConfig.avatars["adrien"] = avatar:get({ usernameOrId = "aduermael", eyeBlinks = true, defaultAnimations = true })
+        gameConfig.avatars["nanskip"] = avatar:get({ usernameOrId = "nanskip", eyeBlinks = true, defaultAnimations = true })
+        gameConfig.avatars["boumety"] = avatar:get({ usernameOrId = "boumety", eyeBlinks = true, defaultAnimations = true })        
     end,
     initCamera = function()
         local cameraContainer = Object()
@@ -587,7 +605,6 @@ levelManager = {
     generateRoom = function (floorNumber)
         local room = Object()
 
-        math.randomseed(math.random(0, 360))
         local hue = math.random(0, 360)
         local saturation = gameConfig.theme.room.saturation
 
@@ -708,14 +725,19 @@ levelManager = {
         end
     end,
     addProps = function (floor, floorNumber)
-        math.randomseed(os.time() + math.random(0, 360))
-        local randomConfig = math.random(1, 5)
+        local randomConfig = math.random(1, 7)
 
-        local prepareProp = function(prop, _, soundDamage, destroySound)
+        local prepareProp = function(prop, soundDamage, destroySound, collide)
             prop.life = 1
             prop:SetParent(floor)
-            prop.CollisionGroups = COLLISION_GROUP_PROPS
-            prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
+            if collide then
+                prop.CollisionGroups = COLLISION_GROUP_PROPS
+                prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
+            else
+                prop.CollisionGroups = COLLISION_GROUP_NONE
+                prop.CollidesWithGroups = COLLISION_GROUP_NONE
+                prop.Physics = PhysicsMode.Disabled
+            end
             prop.soundDamage = soundDamage
             prop.destroySound = destroySound
         end
@@ -746,6 +768,7 @@ levelManager = {
             avatarGaetan.Rotation.Y = math.pi - 0.35
             avatarGaetan.LocalPosition = Number3(-35, 0, 15)
             avatarGaetan.Scale = Number3(0.5, 0.5, 0.5)
+            avatarGaetan.Tick = followPlayerPosition
 
             local avatarAdrien = gameConfig.avatars["adrien"]
             avatarAdrien:SetParent(floor)
@@ -753,6 +776,7 @@ levelManager = {
             avatarAdrien.Rotation.Y = math.pi - 0.25
             avatarAdrien.LocalPosition = Number3(-22, 0, 15)
             avatarAdrien.Scale = Number3(0.5, 0.5, 0.5)
+            avatarAdrien.Tick = followPlayerPosition
         end
 
         if randomConfig == 1 then
@@ -778,7 +802,7 @@ levelManager = {
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
             prop = Shape(Items.claire.office_cabinet)
-            prepareProp(prop, Number3.Zero, "hitmarker_2", "gun_shot_2")
+            prepareProp(prop, "hitmarker_2", "gun_shot_2", true)
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Width * 0.5 - 4, prop.Height * 0.5 - 5, 0)
@@ -891,7 +915,7 @@ levelManager = {
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 23, 0, 6)
 
             prop = Shape(Items.minadune.spikes)
-            prepareProp(prop)
+            prepareProp(prop, nil, nil, true)
             prop.life = 50
             prop.damageColor = Color(255, 0, 0)
             prop.Physics = PhysicsMode.Static
@@ -907,6 +931,73 @@ levelManager = {
                 if collider.CollisionGroups == COLLISION_GROUP_PLAYER then
                     playerManager.takeDamage(1, gameConfig.player.bumpVelocity)
                 end
+            end
+        elseif randomConfig == 6 then
+            local prop = Shape(Items.claire.kitchen_counter)
+            prepareProp(prop)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(-31, 8, 13)
+
+            prop = Shape(Items.kooow.table_round_gwcloth)
+            prepareProp(prop, nil, nil, true)
+            prop.life = 3
+            prop.LocalScale = Number3(0.5, 0.7, 0.5)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(8, 0, 0)
+
+            prop = Shape(Items.claire.painting15)
+            prepareProp(prop)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+
+            local character = gameConfig.avatars["boumety"]
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(floor)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(43, 0, 15)
+                character.Rotation.Y = math.pi - 0.25
+                character.Tick = followPlayerPosition
+            end
+        elseif randomConfig == 7 then
+            local prop = Shape(Items.uevoxel.gym01)
+            prepareProp(prop)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalScale = Number3(0.6, 0.6, 0.6)
+            prop.LocalPosition = Number3(-52, 6, 8)
+
+            prop = Shape(Items.chocomatte.treadmill)
+            prepareProp(prop)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.Rotation.Y = 0
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 35, 0, 1)
+
+            prop = Shape(Items.chocomatte.treadmill)
+            prepareProp(prop)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.Rotation.Y = 0
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, 0, 1)
+
+            prop = Shape(Items.uevoxel.couch)
+            prepareProp(prop)
+            prop.Rotation.Y = math.pi
+            prop.LocalPosition = Number3(8, 6, ROOM_DIMENSIONS.Z * 0.5 - 20)
+
+            prop = Shape(Items.claire.painting6)
+            prepareProp(prop)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+
+            local character = gameConfig.avatars["nanskip"]
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(floor)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(-47, 5, 10)
+                character.Rotation.Y = math.pi - 0.25
+                character.Tick = followPlayerPosition
             end
         end
     end,
