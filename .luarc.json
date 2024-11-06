@@ -6,6 +6,7 @@
             "COLLISION_GROUP_NONE",
             "ui",
             "digitext",
+            "dustifyModule",
             "niceLeaderboardModule",
             "bundle",
             "helpers",

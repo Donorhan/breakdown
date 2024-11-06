@@ -3,16 +3,17 @@ Modules = {
     avatar = "avatar",
     bundle = "bundle",
     ease = "ease",
+    explode = "github.com/aduermael/modzh/explode:b9e5d20",
     particles = "particles",
     sfx = "sfx",
     uitheme = "uitheme",
     ui = "uikit",
-    explode = "github.com/aduermael/modzh/explode:b9e5d20",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
-    niceLeaderboardModule = "github.com/aduermael/modzh/niceleaderboard",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:39f1c19",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:39f1c19",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:39f1c19",
+	niceLeaderboardModule = "github.com/aduermael/modzh/niceleaderboard",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:5361b46",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:5361b46",
+    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:5361b46",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:5361b46",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -37,6 +38,7 @@ Config = {
         "kooow.cardboard_box_small",
         "kooow.solarpanel",
         "chocomatte.ramen",
+        "minadune.spikes",
     },
 }
 
@@ -101,12 +103,14 @@ local gameConfig = {
         foodBonusTimeAdded = 8, -- Time added to the hunger when eating food bonus
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
+        bumpVelocity = Number2(0, 170), -- Bump velocity when player jump on something
     },
     ennemies = {
         police = {
-            speed = 30,
+            speed = 40,
         },
     },
+    avatars = {},
 }
 
 -----------------
@@ -227,32 +231,6 @@ spawners = {
         oneCube.CollidesWithMask = 0
         return oneCube
     end,
-    breakPropParticleEffect = function(position)
-        local explodeParticles = particles:newEmitter({
-            life = function()
-                return 0.75
-            end,
-            velocity = function()
-                return Number3(40 * math.random(-1, 1), math.random(100, 250), 20 * math.random(-1, 1))
-            end,
-            color = function()
-                return Color(255, 255, 255)
-            end,
-            scale = function()
-                return 1.3
-            end,
-            acceleration = function()
-                return Config.ConstantAcceleration
-            end,
-        })
-        explodeParticles:SetParent(World)
-        explodeParticles.Position = position
-        explodeParticles:spawn(30)
-
-        Timer(0.75, false, function()
-            explodeParticles:RemoveFromParent()
-        end)
-    end,
     createBonus = function(bonusType)
         local bonus
         local callback
@@ -371,7 +349,7 @@ spawners = {
             end
         end
     end,
-    spawnEnnemy = function(room, position)
+    spawnEnnemy = function(room, position, ennemyType)
         local ennemy = Shape(Items.chocomatte.police_martin)
         ennemy:SetParent(room.propsContainer)
         ennemy.Physics = PhysicsMode.Dynamic
@@ -380,6 +358,7 @@ spawners = {
         ennemy.Scale = Number3(0.5, 0.5, 0.5)
         ennemy.Pivot = Number3(ennemy.Width * 0.5, 0, ennemy.Depth * 0.5)
         ennemy.lifeTime = 0
+        ennemy.life = 2
 
         ennemy.LocalPosition = Number3(position.X, position.Y, 0)
         ennemy.setDirectionLeft = function(value)
@@ -392,58 +371,30 @@ spawners = {
             end
         end
 
-        local dieParticles = particles:newEmitter({
-            life = function()
-                return 2.0
-            end,
-            velocity = function()
-                local v = Number3(20 + math.random() * 20, 0, 0)
-                v:Rotate(0, math.random() * math.pi * 2, 0)
-                v.Y = 30 + math.random() * 100
-                return v
-            end,
-            color = function()
-                return Color.Red
-            end,
-            scale = function()
-                return 0.5 + math.random() * 2.0
-            end,
-            collidesWithGroups = function()
-                return {}
-            end,
-        })
-
         ennemy.setDirectionLeft(math.random(1, 2) == 1)
-        ennemy.spawnRoom = room
+        ennemy.spawnFloor = room.id
         ennemy.kill = function(reason)
             ennemy.Physics = PhysicsMode.Disabled
-
+            dustifyModule.dustify(ennemy, { direction = ennemy.Motion, velocity = Number3(50, 100, 5), bounciness = 0.25, collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
+            ennemy.IsHidden = true
             if reason == GAME_DEAD_REASON.TRAMPLED then
                 sfx("eating_1",
                     { Position = ennemy.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-
-                dieParticles.Position = ennemy.Position
-                dieParticles:spawn(15)
-
-                ennemy.IsHidden = true
-                ennemy:RemoveFromParent()
-                gameManager._cameraContainer.shake(10)
             elseif reason == GAME_DEAD_REASON.FALL_DAMAGE then
                 sfx("hurt_scream_male_" .. math.random(1, 5),
                     { Position = ennemy.Position, Pitch = 0.5 + math.random() * 0.15, Volume = 0.65 })
+            end
 
-                local ennemyCopy = ennemy:Copy()
-                ennemyCopy:SetParent(World)
-                ennemyCopy.Position = ennemy.Position
-                explode(ennemyCopy)
+            ennemy:RemoveFromParent()
+            gameManager._cameraContainer.shake(10)
+        end
 
-                ennemy.IsHidden = true
-                gameManager._cameraContainer.shake(1)
-
-                Timer(2.0, false, function()
-                    ennemy:RemoveFromParent()
-                    ennemyCopy:RemoveFromParent()
-                end)
+        ennemy.take_damage = function (damage, reason)
+            ennemy.life = ennemy.life - damage
+            if ennemy.life <= 0 then
+                ennemy.kill(reason)
+            else
+                helpers.shape.flash(ennemy, Color.White, 0.25)
             end
         end
 
@@ -453,18 +404,12 @@ spawners = {
                     ennemy.setDirectionLeft(self.Position.X > 0)
                 end
             elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
-                if self.lifeTime > 1.0 then
-                    if normal.Y >= 1.0 then
-                        if collider:GetParent() ~= self.spawnRoom then
-                        self.kill(GAME_DEAD_REASON.FALL_DAMAGE)
-                        end
+                if normal.Y >= 1.0 then
+                    if collider:GetParent():GetParent().id ~= self.spawnFloor then
+                        self.take_damage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE)
                     end
                 end
             end
-        end
-
-        ennemy.Tick = function(self, dt)
-            self.lifeTime = self.lifeTime + dt
         end
 
         return ennemy
@@ -488,6 +433,11 @@ spawners = {
         -- Need to remove block before adding, or pcube colors wrap around
         local oldblock = pcube:GetBlock(0, 0, 0)
         if oldblock ~= nil then oldblock.Color = color end
+
+        Timer(2, false, function()
+            spawners.groundParticlePool:release(pcube)
+            pcube:RemoveFromParent()
+        end)
 
         return pcube
     end,
@@ -530,6 +480,10 @@ gameManager = {
                 _music:Play()
             end)
         end
+
+        -- Load avatars
+        gameConfig.avatars["gaetan"] = avatar:get({ usernameOrId = "gaetan", eyeBlinks = true, defaultAnimations = true })
+        gameConfig.avatars["adrien"] = avatar:get({ usernameOrId = "aduermael", eyeBlinks = true, defaultAnimations = true })
     end,
     initCamera = function()
         local cameraContainer = Object()
@@ -618,6 +572,9 @@ levelManager = {
             end
         end)
     end,
+    currentFloor = function(positionY)
+        return math.floor(positionY / ROOM_DIMENSIONS.Y)
+    end,
     reset = function()
         levelManager.removeFloors(#levelManager._floors)
         levelManager._floors:flush()
@@ -627,7 +584,7 @@ levelManager = {
         spawners.coinPool:releaseAll()
         levelManager.spawnFloors(gameConfig.player.viewRange)
     end,
-    generateRoom = function (groundOnly)
+    generateRoom = function (floorNumber)
         local room = Object()
 
         math.randomseed(math.random(0, 360))
@@ -638,6 +595,7 @@ levelManager = {
         local wallColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.wallLightness)
         local bottomColor = Color(170, 170, 170)
 
+        local groundOnly = floorNumber == -1
         if groundOnly then
             bottomColor = nil
         end
@@ -710,7 +668,7 @@ levelManager = {
             roomStructure:createHoleFromBlockCoordinates(Face.Right, Number3(0, 6, 1), Number3( 2, 3, 1))
         end
 
-        levelManager.addProps(roomProps, groundOnly)
+        levelManager.addProps(roomProps, floorNumber)
 
         room.structure = roomStructure
         room.propsContainer = roomProps
@@ -741,19 +699,19 @@ levelManager = {
         if prop.life > 0 then
             local soundDamage = prop.soundDamage or "punch_1"
             sfx(soundDamage, { Position = prop.Position, Pitch = 0.8 + math.random() * 0.1, Volume = 0.55 })
-            helpers.shape.flash(prop, Color.White, 0.25)
+            helpers.shape.flash(prop, prop.damageColor or Color.White, 0.25)
         else
             local destroySound = prop.destroySound or "gun_shot_2"
             sfx(destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.55 })
-            spawners.breakPropParticleEffect(prop.Position)
+            dustifyModule.dustify(prop, { collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
             prop:RemoveFromParent()
         end
     end,
-    addProps = function (floor, groundOnly)
+    addProps = function (floor, floorNumber)
         math.randomseed(os.time() + math.random(0, 360))
         local randomConfig = math.random(1, 5)
 
-        local prepareProp = function(prop, position, soundDamage, destroySound)
+        local prepareProp = function(prop, _, soundDamage, destroySound)
             prop.life = 1
             prop:SetParent(floor)
             prop.CollisionGroups = COLLISION_GROUP_PROPS
@@ -762,7 +720,7 @@ levelManager = {
             prop.destroySound = destroySound
         end
 
-        if groundOnly then
+        if floorNumber == -1 then
             local prop = Shape(Items.uevoxel.antena02)
             prepareProp(prop)
             prop.Physics = PhysicsMode.Disabled
@@ -778,6 +736,23 @@ levelManager = {
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, prop.Height * 0.5 - 8, -15)
 
             return
+        end
+        if floorNumber == -2 then
+            randomConfig = 1
+
+            local avatarGaetan = gameConfig.avatars["gaetan"]
+            avatarGaetan:SetParent(floor)
+            avatarGaetan.Physics = PhysicsMode.Dynamic
+            avatarGaetan.Rotation.Y = math.pi - 0.35
+            avatarGaetan.LocalPosition = Number3(-35, 0, 15)
+            avatarGaetan.Scale = Number3(0.5, 0.5, 0.5)
+
+            local avatarAdrien = gameConfig.avatars["adrien"]
+            avatarAdrien:SetParent(floor)
+            avatarAdrien.Physics = PhysicsMode.Dynamic
+            avatarAdrien.Rotation.Y = math.pi - 0.25
+            avatarAdrien.LocalPosition = Number3(-22, 0, 15)
+            avatarAdrien.Scale = Number3(0.5, 0.5, 0.5)
         end
 
         if randomConfig == 1 then
@@ -911,9 +886,28 @@ levelManager = {
             prop = prop:Copy()
             prepareProp(prop)
             prop.Physics = PhysicsMode.Disabled
-            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.Scale = Number3(0.4, 0.4, 0.4)
             prop.LocalRotation.Y = -6
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 33, 0, 3)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 23, 0, 6)
+
+            prop = Shape(Items.minadune.spikes)
+            prepareProp(prop)
+            prop.life = 50
+            prop.damageColor = Color(255, 0, 0)
+            prop.Physics = PhysicsMode.Static
+            prop.Scale = Number3(0.4, 0.5, 0.5)
+            prop.LocalRotation.Y = 0
+            local position = spawners.randomPositionInRoom(5, 0)
+            prop.LocalPosition = Number3(position.X, prop.Height * 0.5 - 2, 0)
+            prop.OnCollisionBegin = function(self, collider, normal)
+                if math.abs(normal.Y) < 0.5 then
+                    return
+                end
+
+                if collider.CollisionGroups == COLLISION_GROUP_PLAYER then
+                    playerManager.takeDamage(1, gameConfig.player.bumpVelocity)
+                end
+            end
         end
     end,
     addFloorBonuses = function(floor)
@@ -948,14 +942,14 @@ levelManager = {
         local startFloor = levelManager._lastFloorSpawned - 1
         for floorLevel = 0, floorCount - 1 do
             local currentFloor = startFloor - floorLevel
-            local isFirstFloor = currentFloor == -1
-            local floor = levelManager.generateRoom(isFirstFloor)
+            local floor = levelManager.generateRoom(currentFloor)
             floor:SetParent(World)
             floor.bonuses = {}
 
             floor.Position.Y = currentFloor * ROOM_DIMENSIONS.Y
+            floor.id = currentFloor
 
-            if not isFirstFloor then
+            if currentFloor < -1 then
                 levelManager.addFloorBonuses(floor)
 
                 local colorIntensity = math.max(255 - levelManager._totalFloorSpawned, 0)
@@ -982,11 +976,11 @@ levelManager = {
     end,
     removeFloor = function(floor)
         for _, bonus in ipairs(floor.bonuses) do
-            if bonus.poolIndex and bonus:GetParent() then
+            if bonus.poolIndex then
                 spawners.coinPool:release(bonus)
             end
         end
-
+        floor.bonuses = {}
         floor:RemoveFromParent()
     end,
     removeFloors = function(count)
@@ -1004,7 +998,7 @@ levelManager = {
             return
         end
 
-        local playerCurrentFloor = math.floor(Player.Position.Y / ROOM_DIMENSIONS.Y)
+        local playerCurrentFloor = levelManager.currentFloor(Player.Position.Y)
         if playerCurrentFloor < playerManager._lastFloorReached then
             playerManager._lastFloorReached = playerCurrentFloor
             levelManager.spawnFloors(1)
@@ -1156,22 +1150,29 @@ playerManager = {
                 return
             end
 
-            if playerManager._hasBackpack and normal.Y > 0.8 then
-                collider.kill(GAME_DEAD_REASON.TRAMPLED)
+            -- Jump on ennemies
+            if normal.Y > 0.8 then -- playerManager._hasBackpack and 
+                collider.take_damage(1, GAME_DEAD_REASON.TRAMPLED)
+                playerManager.stopDigging()
+                Player.Velocity.Y = gameConfig.player.bumpVelocity.Y
+                Client:HapticFeedback()
+                gameManager._cameraContainer.shake(2)
                 return
             end
 
             playerManager.takeDamage(1, Number2(-self.Motion.X * 20, 200))
         elseif collider.CollisionGroups == COLLISION_GROUP_PROPS then
             if not playerManager._digging then
-                inverseDirection()
+                if math.abs(normal.X) > 0.5 then
+                    inverseDirection()
+                end
                 return
             end
 
             gameManager._cameraContainer.shake(2)
             levelManager.damageProp(collider, 1)
             playerManager.stopDigging()
-            Player.Velocity.Y = 150
+            Player.Velocity.Y = gameConfig.player.bumpVelocity.Y
 			Client:HapticFeedback()
         end
     end,
@@ -1190,9 +1191,11 @@ playerManager = {
     end,
     onKilled = function(_)
         Player.IsHidden = true
+        explode(Player.Body)
+       -- dustify(Player.Body, { direction = Player.Motion, velocity = Number3(50, 100, 5), bounciness = 0.3 })
         Player.Motion:Set(0, 0, 0)
         Player.Physics = PhysicsMode.Disabled
-        explode(Player.Body)
+        Player.IsHidden = true
         sfx("deathscream_3", { Position = Player.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
     end,
     update = function(dt)
@@ -1476,7 +1479,7 @@ uiManager = {
         end
 
         local niceLeaderboard = niceLeaderboardModule({
-			extraLine = function(score)
+			extraLine = function(_)
 				return string.format("%.2f miles", 5)
 			end,
 		})
