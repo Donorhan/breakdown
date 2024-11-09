@@ -9,7 +9,6 @@ Modules = {
     uitheme = "uitheme",
     ui = "uikit",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
-	niceLeaderboardModule = "github.com/aduermael/modzh/niceleaderboard",
     poolSystem = "github.com/Donorhan/cubzh-library/pool-system:d9bfc5c",
     roomModule = "github.com/Donorhan/cubzh-library/room-module:d9bfc5c",
     dustifyModule = "github.com/Donorhan/cubzh-library/dustify:d9bfc5c",
@@ -22,17 +21,13 @@ Config = {
         "vico.coin",
         "littlecreator.dumbell",
         "pratamacam.shortcake_slice",
-        "chocomatte.police_martin",
         "mrchispop.heart",
-        "raph.helmet_test",
-        "pratamacam.backpack",
         "claire.desk7",
         "piaa.book_shelf",
         "claire.sofa2",
         "claire.office_cabinet",
         "boumety.shelf3",
         "claire.office_door",
-        "pratamacam.vending_machine",
         "uevoxel.antena02",
         "kooow.cardboard_box_long",
         "kooow.cardboard_box_small",
@@ -46,6 +41,15 @@ Config = {
         "uevoxel.gym01",
         "chocomatte.treadmill",
         "uevoxel.couch",
+        "pratamacam.lighting",
+        "pratamacam.table01",
+        "pratamacam.green_screen",
+        "pratamacam.chair01",
+        "pratamacam.snake_plant",
+        "chocomatte.diner_food",
+        "voxels.punching_bag",
+        "uevoxel.vending_machine01",
+        "claire.painting13",
     },
 }
 
@@ -64,7 +68,6 @@ local COLLISION_GROUP_PARTICLES = CollisionGroups(6)
 local COLLISION_GROUP_PROPS = CollisionGroups(7)
 
 local spawners = {}
-local upgrades = {}
 local gameManager = {}
 local levelManager = {}
 local playerManager = {}
@@ -73,15 +76,20 @@ local uiManager = {}
 local gameConfig = {
     gravity = Number3(0, -850, 0),
     floorInMemoryMax = 8,
-    moneyProbability = 0.35,
+    moneyProbability = 0.3,
     bonusProbability = 0.05,
     bonusesRotationSpeed = 1.5 * math.pi,
-    music = nil, -- "https://raw.githubusercontent.com/Donorhan/cubzh-library/main/game-musics/bit-bop.mp3",
+    music = "https://raw.githubusercontent.com/Donorhan/cubzh-library/main/game-musics/bit-bop.mp3",
     musicVolume = 0.5,
     foodSpawnFloorInterval = Number2(4, 7),
     camera = {
         followSpeed = 0.05,
+        defaultZoom = -175,
         playerOffset = Number3(0, 20, -175),
+        zoomSpeed = 2.0,
+        minZoom = -250,
+        maxZoom = -100,
+        lockTranslationOnY = true,
     },
     theme = {
         room = {
@@ -106,7 +114,7 @@ local gameConfig = {
         defaultSpeed = 67,
         defaultJumpHeight = 200,
         defaultDigForce = -15000,
-        defaultHungerMax = 15, -- 15 seconds to find food
+        defaultHungerMax = 10, -- 10 seconds to destroy things
         foodBonusTimeAdded = 8, -- Time added to the hunger when eating food bonus
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
@@ -125,101 +133,14 @@ local gameConfig = {
 --- Helpers
 -----------------
 local followPlayerPosition = function (avatar)
-    local targetRotation = helpers.math.lookAt(avatar.Position, Player.Position)
+    local targetPosition = Player.Position
+    if Player.IsHidden then
+        targetPosition = Camera.Position
+    end
+
+    local targetRotation = helpers.math.lookAt(avatar.Position, targetPosition)
     avatar.Head.Rotation = targetRotation
 end
-
------------------
--- Spawners
------------------
-upgrades = {
-    helmet = {
-        name = "Helmet",
-        index = 4,
-        levels = {
-            {
-                cost = 250,
-                effect = function()
-                    Player:EquipHat(Items.raph.helmet_test)
-                    playerManager._hasHelmet = true
-                end
-            }
-        }
-    },
-    backpack = {
-        name = "Backpack",
-        index = 5,
-        levels = {
-            {
-                cost = 250,
-                effect = function()
-                    Player:EquipBackpack(Items.pratamacam.backpack)
-                    playerManager._hasBackpack = true
-                end
-            }
-        }
-    },
-    moreMoney = {
-        name = "Spawn more money",
-        index = 1,
-        levels = {
-            {
-                cost = 30,
-                effect = function()
-                    gameManager._moneyProbability = gameConfig.moneyProbability + 0.1
-                end
-            },
-            {
-                cost = 100,
-                effect = function()
-                    gameManager._moneyProbability = gameConfig.moneyProbability + 0.2
-                end
-            },
-            {
-                cost = 200,
-                effect = function()
-                    gameManager._moneyProbability = gameConfig.moneyProbability + 0.3
-                end
-            },
-            {
-                cost = 350,
-                effect = function()
-                    gameManager._moneyProbability = gameConfig.moneyProbability + 0.4
-                end
-            }
-        }
-    },
-    moreBonus = {
-        name = "Spawn more bonus",
-        index = 2,
-        levels = {
-            {
-                cost = 20,
-                effect = function()
-                    gameManager._bonusProbability = gameConfig.bonusProbability + 0.025
-                end
-            },
-            {
-                cost = 100,
-                effect = function()
-                    gameManager._bonusProbability = gameConfig.bonusProbability + 0.5
-                end
-            },
-            {
-                cost = 250,
-                effect = function()
-                    gameManager._bonusProbability = gameConfig.bonusProbability + 0.75
-                end
-            },
-            {
-                cost = 500,
-                effect = function()
-                    gameManager._bonusProbability = gameConfig.bonusProbability + 0.1
-                end
-            }
-        }
-    },
-}
 
 -----------------
 -- Spawners
@@ -245,6 +166,7 @@ spawners = {
         oneCube:AddBlock(Color.White, 0, 0, 0)
         oneCube.CollisionGroupsMask = 0
         oneCube.CollidesWithMask = 0
+        oneCube.IsUnlit = true
         return oneCube
     end,
     createBonus = function(bonusType)
@@ -265,12 +187,13 @@ spawners = {
             callback = function(_)
                 sfx("eating_4", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
                 playerManager._hunger = math.max(0, playerManager._hunger - gameConfig.player.foodBonusTimeAdded)
+                gameManager.increaseStat("food", 1, bonus)
             end
         elseif bonusType == GAME_BONUSES.COIN then
             bonus = Shape(Items.vico.coin)
             callback = function(coin)
                 sfx("coin_1", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-                gameManager._money = gameManager._money + 1
+                gameManager.increaseStat("coins", 1, bonus)
                 spawners.coinPool:release(coin)
             end
         end
@@ -366,69 +289,83 @@ spawners = {
         end
     end,
     spawnEnnemy = function(room, position, ennemyType)
-        local ennemy = Shape(Items.chocomatte.police_martin)
-        ennemy:SetParent(room.propsContainer)
-        ennemy.Physics = PhysicsMode.Dynamic
-        ennemy.CollisionGroups = COLLISION_GROUP_ENNEMY
-        ennemy.CollidesWithGroups = COLLISION_GROUP_WALL + COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_PROPS
-        ennemy.Scale = Number3(0.5, 0.5, 0.5)
-        ennemy.Pivot = Number3(ennemy.Width * 0.5, 0, ennemy.Depth * 0.5)
-        ennemy.lifeTime = 0
-        ennemy.life = 2
+        local npc = MutableShape()
+        npc:AddBlock(Color(0, 0, 0, 0), 0, 0, 0)
+        npc.Pivot = Number3(0.5, 0, 0.5)
+        npc.CollidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL + COLLISION_GROUP_PROPS
+        npc.CollisionGroups = COLLISION_GROUP_ENNEMY
+        npc.Physics = PhysicsMode.Dynamic
+        npc.Scale = Number3(8, 8, 8)
+        npc.Rotation.Y = math.pi / 2
 
-        ennemy.LocalPosition = Number3(position.X, position.Y, 0)
-        ennemy.setDirectionLeft = function(value)
+        local model = avatar:get({ usernameOrId = "donononoyes", eyeBlinks = true, defaultAnimations = true })
+        model:SetParent(npc)
+        model.LocalPosition = Number3(0, 0, 0)
+        model.Physics = PhysicsMode.Disabled
+        model.LocalScale = Number3(0.5, 0.5, 0.5) / npc.Scale
+
+        Timer(1.0, false, function()
+            model.Animations.Walk:Play()
+        end)
+
+        npc.setDirectionLeft = function(value)
             if value then
-                ennemy.Motion:Set(-gameConfig.ennemies.police.speed, 0, 0)
-                ease:linear(ennemy.Rotation, 0.2).Y = math.rad(-90 + 360)
+                npc.Motion:Set(-gameConfig.ennemies.police.speed, 0, 0)
+                ease:linear(npc.Rotation, 0.2).Y = math.rad(-90 + 360)
             else
-                ennemy.Motion:Set(gameConfig.ennemies.police.speed, 0, 0)
-                ease:linear(ennemy.Rotation, 0.2).Y = math.rad(90)
+                npc.Motion:Set(gameConfig.ennemies.police.speed, 0, 0)
+                ease:linear(npc.Rotation, 0.2).Y = math.rad(90)
             end
         end
 
-        ennemy.setDirectionLeft(math.random(1, 2) == 1)
-        ennemy.spawnFloor = room.id
-        ennemy.kill = function(reason)
-            ennemy.Physics = PhysicsMode.Disabled
-            dustifyModule.dustify(ennemy, { direction = ennemy.Motion, velocity = Number3(50, 100, 5), bounciness = 0.25, collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
-            ennemy.IsHidden = true
+        npc.setDirectionLeft(math.random(1, 2) == 1)
+        npc.kill = function(reason)
+            npc.Physics = PhysicsMode.Disabled
+            dustifyModule.dustify(npc, { direction = npc.Motion, velocity = Number3(50, 100, 5), bounciness = 0.25, collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
+            npc.IsHidden = true
             if reason == GAME_DEAD_REASON.TRAMPLED then
                 sfx("eating_1",
-                    { Position = ennemy.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
+                    { Position = npc.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
+                playerManager.calmDownAnger(1)
+                gameManager.increaseStat("killedEnnemies", 1, npc)
             elseif reason == GAME_DEAD_REASON.FALL_DAMAGE then
                 sfx("hurt_scream_male_" .. math.random(1, 5),
-                    { Position = ennemy.Position, Pitch = 0.5 + math.random() * 0.15, Volume = 0.65 })
+                    { Position = npc.Position, Pitch = 0.5 + math.random() * 0.15, Volume = 0.65 })
             end
-
-            ennemy:RemoveFromParent()
+    
+            npc:RemoveFromParent()
             gameManager._cameraContainer.shake(10)
         end
-
-        ennemy.take_damage = function (damage, reason)
-            ennemy.life = ennemy.life - damage
-            if ennemy.life <= 0 then
-                ennemy.kill(reason)
+    
+        npc.takeDamage = function (damage, reason)
+            npc.life = npc.life - damage
+            if npc.life <= 0 then
+                npc.kill(reason)
             else
-                helpers.shape.flash(ennemy, Color.White, 0.25)
+                helpers.shape.flash(model.Body, Color.White, 0.25)
             end
         end
-
-        ennemy.OnCollisionBegin = function(self, collider, normal)
+    
+        npc.OnCollisionBegin = function(self, collider, normal)
             if collider.CollisionGroups == COLLISION_GROUP_WALL or collider.CollisionGroups == COLLISION_GROUP_PROPS then
                 if math.abs(normal.X) > 0.5 then
-                    ennemy.setDirectionLeft(self.Position.X > 0)
+                    npc.setDirectionLeft(self.Position.X > 0)
                 end
             elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
                 if normal.Y >= 1.0 then
                     if collider:GetParent():GetParent().id ~= self.spawnFloor then
-                        self.take_damage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE)
+                        self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE)
                     end
                 end
             end
         end
 
-        return ennemy
+        npc:SetParent(room)
+        npc.LocalPosition = Number3(position.X, position.Y, 0)
+        npc.spawnFloor = room.id
+        npc.life = 1
+
+        return npc
     end,
     spawnGroundParticle = function(position, color)
         local pcube = spawners.groundParticlePool:acquire()
@@ -465,14 +402,84 @@ spawners = {
     end,
 }
 
+spawners.createLaser = function()
+    local HSLColor = { h = 360, s = 84, l = 60 }
+    local coreColor = helpers.colors.HSLToRGB(HSLColor.h, HSLColor.s, HSLColor.l)
+    coreColor.A = 200
+
+    local outlineColor = helpers.colors.HSLToRGB(HSLColor.h, HSLColor.s, HSLColor.l * 0.7)
+    outlineColor.A = 120
+
+    local laserCore = MutableShape()
+    laserCore:AddBlock(coreColor, 0, 0, 0)
+    laserCore.Pivot = Number3(0.5, 0.5, 0)
+    laserCore.Scale = Number3(1.5, 1.5, 2)
+    laserCore.CollisionGroups = COLLISION_GROUP_NONE
+    laserCore.CollidesWithGroups = COLLISION_GROUP_NONE
+    laserCore.Physics = PhysicsMode.Disabled
+    laserCore.IsUnlit = true
+
+    local laserOutline = MutableShape()
+    laserOutline:AddBlock(outlineColor, 0, 0, 0)
+    laserOutline.Pivot = Number3(0.5, 0.5, 0)
+    laserOutline.Scale = Number3(4, 4, 2)
+    laserOutline.CollisionGroups = COLLISION_GROUP_NONE
+    laserOutline.CollidesWithGroups = COLLISION_GROUP_NONE
+    laserOutline.Physics = PhysicsMode.Disabled
+    laserOutline.IsUnlit = true
+
+    local laserComplete = Object()
+    laserOutline:SetParent(laserComplete)
+    laserCore:SetParent(laserComplete)
+    laserComplete.CollisionGroups = COLLISION_GROUP_NONE
+    laserComplete.CollidesWithGroups = COLLISION_GROUP_NONE
+    laserComplete.Physics = PhysicsMode.Disabled
+    laserComplete.LocalPosition = Number3(0, 0, -50)
+
+    local minScale = 0.8
+    local maxScale = 1.2
+    local currentScale = minScale
+    local targetScale = maxScale
+    local lerpSpeed = 40.0
+
+    local ray = Ray(laserComplete.Position, Number3(1, 0, 0))
+    laserComplete.Tick = function(self, dt)
+        self.LocalRotation.Y = self.LocalRotation.Y + (dt * math.pi) * 0.4
+        
+        currentScale = currentScale + (targetScale - currentScale) * lerpSpeed * dt
+        if math.abs(currentScale - targetScale) < 0.1 then
+            targetScale = targetScale == maxScale and minScale or maxScale
+        end
+
+        laserComplete.Scale.X = currentScale
+        laserComplete.Scale.Y = currentScale
+
+        ray.Direction = self.Forward
+        local impact = ray:Cast(COLLISION_GROUP_WALL + COLLISION_GROUP_PLAYER, COLLISION_GROUP_PROPS, true)
+        if impact == nil then
+            laserComplete.Scale.Z = 100
+        elseif impact.Distance then
+            laserComplete.Scale.Z = impact.Distance * 0.5
+        end
+    end
+
+    return laserComplete
+end
+
 -----------------
 -- Game manager
 -----------------
 gameManager = {
     _cameraContainer = nil,
-    _bonusProbability = gameConfig.bonusProbability,
     _money = 0,
-    _moneyProbability = gameConfig.moneyProbability,
+    _score = 0,
+    _stats = {
+        coins = 0,
+        food = 0,
+        killedEnnemies = 0,
+        destroyedProps = 0,
+        destroyedGround = 0,
+    },
     _playing = false,
     _music = nil,
 
@@ -501,7 +508,8 @@ gameManager = {
         gameConfig.avatars["gaetan"] = avatar:get({ usernameOrId = "gaetan", eyeBlinks = true, defaultAnimations = true })
         gameConfig.avatars["adrien"] = avatar:get({ usernameOrId = "aduermael", eyeBlinks = true, defaultAnimations = true })
         gameConfig.avatars["nanskip"] = avatar:get({ usernameOrId = "nanskip", eyeBlinks = true, defaultAnimations = true })
-        gameConfig.avatars["boumety"] = avatar:get({ usernameOrId = "boumety", eyeBlinks = true, defaultAnimations = true })        
+        gameConfig.avatars["boumety"] = avatar:get({ usernameOrId = "boumety", eyeBlinks = true, defaultAnimations = true })
+        gameConfig.avatars["pratamacam"] = avatar:get({ usernameOrId = "pratamacam", eyeBlinks = true, defaultAnimations = true })
     end,
     initCamera = function()
         local cameraContainer = Object()
@@ -523,6 +531,12 @@ gameManager = {
                 cameraContainer.targetFollower.LocalPosition.Y = playerPositionY
             end
 
+            if not gameConfig.camera.lockTranslationOnY then
+                cameraContainer.targetFollower.LocalPosition.X = Player.Position.X + gameConfig.camera.playerOffset.X
+            else
+                cameraContainer.targetFollower.LocalPosition.X = 0
+            end
+
             cameraContainer.Position.X = 0
             cameraContainer.Position.Y = 0
             if cameraContainer.trauma ~= 0 then
@@ -536,16 +550,28 @@ gameManager = {
                 cameraContainer.trauma = math.max(0, cameraContainer.trauma - cameraContainer.decay * dt)
             end
 
-            local lerpedPosition = (cameraContainer.targetFollower.Position.Y - Camera.Position.Y) * gameConfig.camera.followSpeed
-            Camera.Position.Y = Camera.Position.Y + lerpedPosition
-            Camera.Position.X = cameraContainer.targetFollower.Position.X
+            local lerpedPositionY = (cameraContainer.targetFollower.Position.Y - Camera.Position.Y) * gameConfig.camera.followSpeed
+            Camera.Position.Y = Camera.Position.Y + lerpedPositionY
+
+            local lerpedPositionX = (cameraContainer.targetFollower.Position.X - Camera.Position.X) * gameConfig.camera.followSpeed
+            Camera.Position.X = Camera.Position.X + lerpedPositionX
+
+            local lerpedPositionZ = (gameConfig.camera.playerOffset.Z - Camera.Position.Z) * gameConfig.camera.followSpeed
+            Camera.Position.Z = Camera.Position.Z + lerpedPositionZ
         end
 
         cameraContainer.shake = function(intensity)
             cameraContainer.trauma = math.min(cameraContainer.trauma + intensity, 1.0)
         end
 
+        cameraContainer.zoom = function(targetZoom)
+            gameConfig.camera.playerOffset.Z = math.max(gameConfig.camera.minZoom, math.min(gameConfig.camera.maxZoom, targetZoom))
+        end
+
         gameManager._cameraContainer = cameraContainer
+    end,
+    increaseStat = function(stat, amount, _obj)
+        gameManager._stats[stat] = gameManager._stats[stat] + amount
     end,
     startGame = function()
         gameManager._cameraContainer.targetFollower.Position = Number3.Zero
@@ -555,6 +581,14 @@ gameManager = {
         playerManager.reset()
 
         gameManager._playing = true
+        gameManager._stats = {
+            coins = 0,
+            food = 0,
+            killedEnnemies = 0,
+            destroyedProps = 0,
+            destroyedGround = 0,
+        }
+
         uiManager.showHUD()
     end,
     endGame = function(reason)
@@ -566,7 +600,7 @@ gameManager = {
         gameManager._playing = false
 
         Timer(0.75, false, function()
-            uiManager.showGameOverScreen()
+            uiManager.showScoreScreen()
         end)
     end,
 }
@@ -579,6 +613,7 @@ levelManager = {
     _lastFloorSpawned = 0,
     _floorWithoutZombieCount = 0,
     _totalFloorSpawned = 0,
+    _lastRoomConfigs = {}, -- Used to avoid same rooms in a row
 
     init = function()
         levelManager._floors = fifo()
@@ -592,6 +627,22 @@ levelManager = {
     end,
     currentFloor = function(positionY)
         return math.floor(positionY / ROOM_DIMENSIONS.Y)
+    end,
+    getNewRandomConfig = function()
+        local maxAttempts = 10
+        local attempts = 0
+        local newConfig
+
+        repeat
+            newConfig = math.random(1, 8)
+            attempts = attempts + 1
+        until (not table.contains(levelManager._lastRoomConfigs, newConfig) or attempts >= maxAttempts)
+        table.insert(levelManager._lastRoomConfigs, 1, newConfig)
+        if #levelManager._lastRoomConfigs > 3 then
+            table.remove(levelManager._lastRoomConfigs)
+        end
+
+        return newConfig
     end,
     reset = function()
         levelManager.removeFloors(#levelManager._floors)
@@ -610,7 +661,7 @@ levelManager = {
 
         local backgroundColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.backgroundLightness)
         local wallColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.wallLightness)
-        local bottomColor = Color(170, 170, 170)
+        local bottomColor = helpers.colors.HSLToRGB(hue, saturation, math.random(76, 80))
 
         local groundOnly = floorNumber == -1
         if groundOnly then
@@ -631,16 +682,16 @@ levelManager = {
                 blocScale = 3,
                 color = wallColor,
                 thickness = 2,
-                ignore = groundOnly,
             },
             right = {
                 blocScale = 2,
                 color = wallColor,
                 thickness = 2,
-                ignore = groundOnly,
             },
             front = {
                 ignore = true,
+                thickness = 2,
+                color = wallColor,
             },
             top = {
                 blocScale = 1,
@@ -651,9 +702,18 @@ levelManager = {
                 blocScale = 2,
                 color = backgroundColor,
                 thickness = 1,
-                ignore = groundOnly,
             },
         }
+
+        if groundOnly then
+            roomConfig.left.ignore = false
+            roomConfig.left.color = gameConfig.theme.room.exteriorColor
+            roomConfig.right.ignore = false
+            roomConfig.right.color = gameConfig.theme.room.exteriorColor
+            roomConfig.back.ignore = false
+            roomConfig.back.color = gameConfig.theme.room.exteriorColor
+            roomConfig.height = 4
+        end
 
         local roomStructure = roomModule.create(roomConfig)
         roomStructure.root:SetParent(room)
@@ -678,11 +738,9 @@ levelManager = {
         -- windows
         local windowChoice = math.random(1, 10)
         if windowChoice == 1 then
-            roomStructure:createHoleFromBlockCoordinates(Face.Back, Number3(7, 7, 1), Number3( 5, 4, 2))
+            roomStructure:createHoleFromBlockCoordinates(Face.Left, Number3(0, 6, 1), Number3( 2, 4, 1))
         elseif windowChoice == 2 then
-            roomStructure:createHoleFromBlockCoordinates(Face.Back, Number3(7, 7, 1), Number3( 5, 4, 2))
-        elseif windowChoice == 3 then
-            roomStructure:createHoleFromBlockCoordinates(Face.Right, Number3(0, 6, 1), Number3( 2, 3, 1))
+            roomStructure:createHoleFromBlockCoordinates(Face.Right, Number3(0, 6, 1), Number3( 2, 4, 1))
         end
 
         levelManager.addProps(roomProps, floorNumber)
@@ -710,6 +768,8 @@ levelManager = {
         floorCollider.Physics = PhysicsMode.StaticPerBlock
         local impactPosition = impact.Block.Coordinates
         floorCollider.room:createHoleFromBlockCoordinates(Face.Bottom, impactPosition, gameConfig.player.floorImpactSize)
+        playerManager.calmDownAnger(0.25)
+        gameManager.increaseStat("destroyedGround", 1, nil)
     end,
     damageProp = function(prop, _)
         prop.life = prop.life - 1
@@ -722,36 +782,37 @@ levelManager = {
             sfx(destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.55 })
             dustifyModule.dustify(prop, { collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
             prop:RemoveFromParent()
+            playerManager.calmDownAnger(3)
+            gameManager.increaseStat("destroyedProps", 1, prop)
         end
     end,
-    addProps = function (floor, floorNumber)
-        local randomConfig = math.random(1, 7)
-
-        local prepareProp = function(prop, soundDamage, destroySound, collide)
-            prop.life = 1
-            prop:SetParent(floor)
-            if collide then
-                prop.CollisionGroups = COLLISION_GROUP_PROPS
-                prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
-            else
-                prop.CollisionGroups = COLLISION_GROUP_NONE
-                prop.CollidesWithGroups = COLLISION_GROUP_NONE
-                prop.Physics = PhysicsMode.Disabled
-            end
-            prop.soundDamage = soundDamage
-            prop.destroySound = destroySound
+    prepareProp = function(floor, prop, soundDamage, destroySound, collide)
+        prop.life = 1
+        prop:SetParent(floor)
+        if collide then
+            prop.CollisionGroups = COLLISION_GROUP_PROPS
+            prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
+        else
+            prop.CollisionGroups = COLLISION_GROUP_NONE
+            prop.CollidesWithGroups = COLLISION_GROUP_NONE
+            prop.Physics = PhysicsMode.Disabled
         end
+        prop.soundDamage = soundDamage
+        prop.destroySound = destroySound
+    end,
+    addProps = function (floor, floorNumber)
+        local randomConfig = floorNumber <= -2 and levelManager.getNewRandomConfig() or math.random(1, 8)
 
         if floorNumber == -1 then
             local prop = Shape(Items.uevoxel.antena02)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 9
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 13, prop.Height * 0.5 - 3, -15)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 22, prop.Height * 0.5 - 3, -15)
 
             prop = Shape(Items.kooow.solarpanel)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = 0
@@ -781,20 +842,20 @@ levelManager = {
 
         if randomConfig == 1 then
             local prop = Shape(Items.claire.desk7)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 90
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
             prop = Shape(Items.claire.sofa2)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
+            prop.LocalScale = Number3(1.2, 1.2, 1.2)
             prop.LocalRotation.Y = math.pi
-            prop.LocalPosition = Number3(0, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            prop.LocalPosition = Number3(0, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 11)
 
             prop = Shape(Items.piaa.book_shelf)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.Pivot = Number3(0, prop.Height * 0.5, 0)
@@ -802,7 +863,7 @@ levelManager = {
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
             prop = Shape(Items.claire.office_cabinet)
-            prepareProp(prop, "hitmarker_2", "gun_shot_2", true)
+            levelManager.prepareProp(floor, prop, "hitmarker_2", "gun_shot_2", true)
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Width * 0.5 - 4, prop.Height * 0.5 - 5, 0)
@@ -810,112 +871,116 @@ levelManager = {
             prop.life = 2
 
             prop = Shape(Items.boumety.shelf3)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth)
+
+            -- local laser = spawners.createLaser()
+            -- --prepareProp(laser, "laser_hit", "laser_explode", true)
+            -- laser.LocalPosition = Number3(0, 10, -20) -- Ajustez la position selon vos besoins
+            -- laser:SetParent(floor)
+
         elseif randomConfig == 2 then
             local prop = Shape(Items.claire.desk7)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = -90
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
 
             prop = Shape(Items.claire.sofa2)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.LocalScale = Number3(1.2, 1.2, 1.2)
             prop.LocalRotation.Y = math.pi / 2
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
 
             prop = Shape(Items.claire.office_door)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.LocalRotation.Y = 0
             prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
             prop.Scale = Number3(1.7, 1.7, 1.7)
 
-            prop = Shape(Items.pratamacam.vending_machine)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            prop = Shape(Items.uevoxel.vending_machine01)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalRotation.Y = math.pi
             prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 45, 0, ROOM_DIMENSIONS.Z * 0.5 - 15)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 45, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
             prop.Scale = Number3(0.7, 0.7, 0.7)
+
+            prop = Shape(Items.claire.painting13)
+            levelManager.prepareProp(floor, prop)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 55, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
         elseif randomConfig == 3 then
             local prop = Shape(Items.claire.desk7)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-38, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
 
             prop = Shape(Items.claire.desk7)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-17, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
 
             prop = Shape(Items.claire.sofa2)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.LocalScale = Number3(1.2, 1.2, 1.2)
             prop.LocalRotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
 
             prop = Shape(Items.piaa.book_shelf)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Static
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = math.pi / 2
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 9,  prop.Height * 0.5 - 12, 8)
 
             prop = Shape(Items.claire.office_door)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.LocalRotation.Y = 0
             prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
             prop.Scale = Number3(1.7, 1.7, 1.7)
         elseif randomConfig == 4 then
             local prop = Shape(Items.kooow.cardboard_box_long)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.5
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 25, 0, 5)
 
             prop = prop:Copy()
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.95
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, 0, -1)
 
             prop = Shape(Items.kooow.cardboard_box_small)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.5
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 21, 7, 5)
         elseif randomConfig == 5 then
             local prop = Shape(Items.kooow.cardboard_box_long)
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -2
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 35, 0, 4)
 
             prop = prop:Copy()
-            prepareProp(prop)
-            prop.Physics = PhysicsMode.Disabled
+            levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.4, 0.4, 0.4)
             prop.LocalRotation.Y = -6
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 23, 0, 6)
 
             prop = Shape(Items.minadune.spikes)
-            prepareProp(prop, nil, nil, true)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
             prop.life = 50
             prop.damageColor = Color(255, 0, 0)
             prop.Physics = PhysicsMode.Static
@@ -934,22 +999,26 @@ levelManager = {
             end
         elseif randomConfig == 6 then
             local prop = Shape(Items.claire.kitchen_counter)
-            prepareProp(prop)
-            prop.LocalScale = Number3(0.5, 0.5, 0.5)
-            prop.LocalPosition = Number3(-31, 8, 13)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalScale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(-19, 13, 11)
 
             prop = Shape(Items.kooow.table_round_gwcloth)
-            prepareProp(prop, nil, nil, true)
-            prop.life = 3
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
             prop.LocalScale = Number3(0.5, 0.7, 0.5)
             prop.Rotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(8, 0, 0)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 40, 0, 0)
+
+            local foodPlate = Shape(Items.chocomatte.diner_food)
+            foodPlate:SetParent(prop)
+            foodPlate.LocalPosition = Number3(35, 15, 15)
 
             prop = Shape(Items.claire.painting15)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
-            prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 + 1, ROOM_DIMENSIONS.Z * 0.5 - 10)
 
             local character = gameConfig.avatars["boumety"]
             if not character:GetParent() then
@@ -962,47 +1031,109 @@ levelManager = {
             end
         elseif randomConfig == 7 then
             local prop = Shape(Items.uevoxel.gym01)
-            prepareProp(prop)
-            prop.Rotation.Y = math.pi / 2
-            prop.LocalScale = Number3(0.6, 0.6, 0.6)
-            prop.LocalPosition = Number3(-52, 6, 8)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.Rotation.Y = math.pi
+            prop.LocalScale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(-18, 8, 4)
+
+            prop = Shape(Items.uevoxel.gym01)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.Rotation.Y = math.pi
+            prop.LocalScale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(9, 8, 4)
 
             prop = Shape(Items.chocomatte.treadmill)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.Rotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 35, 0, 1)
 
             prop = Shape(Items.chocomatte.treadmill)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.Rotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, 0, 1)
 
-            prop = Shape(Items.uevoxel.couch)
-            prepareProp(prop)
-            prop.Rotation.Y = math.pi
-            prop.LocalPosition = Number3(8, 6, ROOM_DIMENSIONS.Z * 0.5 - 20)
-
             prop = Shape(Items.claire.painting6)
-            prepareProp(prop)
+            levelManager.prepareProp(floor, prop)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+
+            prop = Shape(Items.voxels.punching_bag)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, 3)
 
             local character = gameConfig.avatars["nanskip"]
             if not character:GetParent() then
                 character.Physics = false
                 character:SetParent(floor)
                 character.Scale = Number3(0.5, 0.5, 0.5)
-                character.LocalPosition = Number3(-47, 5, 10)
+                character.LocalPosition = Number3(-38, 0, 10)
                 character.Rotation.Y = math.pi - 0.25
+                character.Tick = followPlayerPosition
+            end
+        elseif randomConfig == 8 then
+            local prop = Shape(Items.pratamacam.lighting)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, -20)
+            prop.LocalRotation.Y = 0.6
+
+            local light = Light()
+            light:SetParent(prop)
+            light.Color = Color(255, 255, 0)
+            light.Hardness = 0.9
+            light.Range = 110
+            light.Angle = 0.4
+            light.Type = LightType.Spot
+            light.LocalPosition = Number3(15, 50, 15)
+            light.LocalRotation.Y = 6.45
+            light.LocalRotation.X = 0.1
+            light.CastsShadows = true
+            light.Tick = function(o, dt)
+                o.Range = 110 + (math.sin(dt) * 0.5 + 0.5) * 100
+            end
+
+            prop = Shape(Items.pratamacam.table01)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 3
+            prop.LocalScale = Number3(0.8, 0.8, 0.8)
+            prop.LocalPosition = Number3(0, 3, -5)
+
+            prop = Shape(Items.pratamacam.green_screen)
+            levelManager.prepareProp(floor, prop)
+            prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
+            prop.Rotation.Y = math.pi
+            prop.LocalScale = Number3(0.6, 0.6, 0.6)
+            prop.LocalPosition = Number3(0, ROOM_DIMENSIONS.Y * 0.5 - prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 8)
+
+            prop = Shape(Items.pratamacam.chair01)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalRotation.Y = -1.9
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(18, 5, 5)
+
+            prop = Shape(Items.pratamacam.snake_plant)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 15, 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
+
+            local character = gameConfig.avatars["pratamacam"]
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(floor)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(0, 0, 10)
                 character.Tick = followPlayerPosition
             end
         end
     end,
     addFloorBonuses = function(floor)
-        if math.random() < gameManager._moneyProbability then
+        if math.random() < gameConfig.moneyProbability then
             spawners.spawnCoins(floor)
         end
 
@@ -1016,7 +1147,6 @@ levelManager = {
             levelManager._floorWithoutZombieCount = levelManager._floorWithoutZombieCount + 1
         end
 
-
         if spawners.lastFoodSpawnedFloorCount > math.random(gameConfig.foodSpawnFloorInterval.X, gameConfig.foodSpawnFloorInterval.Y) then
             spawners.spawnBonus(floor, GAME_BONUSES.FOOD)
             spawners.lastFoodSpawnedFloorCount = 0
@@ -1024,7 +1154,7 @@ levelManager = {
             spawners.lastFoodSpawnedFloorCount = spawners.lastFoodSpawnedFloorCount + 1
         end
 
-        if floorLevel > 5 and math.random() < gameManager._bonusProbability then
+        if floorLevel > 5 and math.random() < gameConfig.bonusProbability then
             local bonusType = math.random(GAME_BONUSES.DIG_FAST, GAME_BONUSES.DIG_FAST)
             spawners.spawnBonus(floor, bonusType)
         end
@@ -1111,13 +1241,6 @@ playerManager = {
     _speed = gameConfig.player.defaultSpeed,
     _hunger = 0,
     _hungerMax = gameConfig.player.defaultHungerMax,
-    _upgrades = {
-        moreMoney = 0,
-        moreBonus = 0,
-        moreLife = 0,
-        helmet = 0,
-        backpack = 0,
-    },
 
     init = function()
         Player.IsHidden = false
@@ -1186,13 +1309,11 @@ playerManager = {
         playerManager._life = gameConfig.player.defaultLife
         playerManager._hunger = 0
         playerManager._hungerMax = gameConfig.player.defaultHungerMax
-
-        -- Apply upgrades
-        for upgradeKey, upgrade in pairs(playerManager._upgrades) do
-            if upgrade > 0 then
-                upgrades[upgradeKey].levels[upgrade].effect()
-            end
-        end
+        gameManager._cameraContainer.zoom(gameConfig.camera.defaultZoom)
+        gameConfig.camera.lockTranslationOnY = true
+    end,
+    calmDownAnger = function(value)
+        playerManager._hunger = math.max(0, playerManager._hunger - value)
     end,
     startDigging = function(diggingForce)
         playerManager._digging = true
@@ -1243,7 +1364,7 @@ playerManager = {
 
             -- Jump on ennemies
             if normal.Y > 0.8 then -- playerManager._hasBackpack and 
-                collider.take_damage(1, GAME_DEAD_REASON.TRAMPLED)
+                collider.takeDamage(1, GAME_DEAD_REASON.TRAMPLED)
                 playerManager.stopDigging()
                 Player.Velocity.Y = gameConfig.player.bumpVelocity.Y
                 Client:HapticFeedback()
@@ -1288,6 +1409,8 @@ playerManager = {
         Player.Physics = PhysicsMode.Disabled
         Player.IsHidden = true
         sfx("deathscream_3", { Position = Player.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
+        gameManager._cameraContainer.zoom(-20)
+        gameConfig.camera.lockTranslationOnY = false
     end,
     update = function(dt)
         if not gameManager._playing then
@@ -1328,19 +1451,11 @@ uiManager = {
     _gameOverScreen = nil,
     _HUDScreen = nil,
     _lifeShapes = {},
-    _moneyCountText = 0,
     _previousMoneyCount = 0,
 
     init = function()
     end,
     update = function(self, _)
-        if uiManager._moneyCountText and gameManager._money ~= uiManager._previousMoneyCount then
-            uiManager._moneyCountText.Text = gameManager._money
-            uiManager._previousMoneyCount = gameManager._money
-            uiManager._moneyCountText.animate()
-
-        end
-
         if uiManager._HUDScreen then
             if uiManager._hungerBar then
                 local hungerRatio = math.min(1, math.max(0, 1 - (playerManager._hunger / playerManager._hungerMax)))
@@ -1369,118 +1484,6 @@ uiManager = {
             uiManager._HUDScreen = nil
         end
     end,
-    createMoneyComponent = function (componentWidth)
-        local uiPadding = uitheme.current.padding * 2
-
-        local moneyBloc = ui:createFrame(Color(0, 0, 0, 0))
-
-        local money = ui:createShape(bundle:Shape("shapes/pezh_coin_2"), { spherized = false, doNotFlip = true })
-        money.Width = uiManager.ICONS_SIZE
-        money.Height = uiManager.ICONS_SIZE
-        money:setParent(moneyBloc)
-
-        local moneyText = ui:createText("0", Color(255, 255, 255, 255), "default")
-        moneyText:setParent(moneyBloc)
-		moneyText.object.Anchor = { 1, 0 }
-		moneyText.LocalPosition = Number3(componentWidth - uiPadding * 2, 0, 0)
-        moneyText.animation = nil
-        uiManager._moneyCountText = moneyText
-
-
-        moneyText.animate = function()
-			ease:cancel(moneyText.animation)
-            moneyText.animation = ease:outSine(moneyText.object, 0.15, {
-                onDone = function()
-                    moneyText.object.Scale = Number3.One
-                end,
-            })
-            moneyText.animation.Scale = Number3(1.4, 1.4, 1)
-        end
-
-        return moneyBloc
-    end,
-    createUpgradeComponents = function(selectedUpgrades, frame)
-        local function createCoinIcon(parent)
-            local coin = ui:createShape(bundle:Shape("shapes/pezh_coin_2"), { spherized = false, doNotFlip = true })
-            coin.Width = 20
-            coin.Height = 20
-            coin:setParent(parent)
-            return coin
-        end
-
-        local upgradeFrames = {}
-        local refreshUpgrades = nil
-        refreshUpgrades = function()
-            for _, frame in ipairs(upgradeFrames) do
-                frame:remove()
-            end
-            upgradeFrames = {}
-
-            table.sort(selectedUpgrades, function(a, b)
-                return upgrades[a].index > upgrades[b].index
-            end)
-
-            for i, upgradeKey in ipairs(selectedUpgrades) do
-                local upgrade = upgrades[upgradeKey]
-                local currentLevel = playerManager._upgrades[upgradeKey] + 1
-                local nextLevel = upgrade.levels[currentLevel]
-
-                local upgradeFrame = ui:createFrame(Color(60, 70, 80))
-                upgradeFrame.Width = frame.Width
-                upgradeFrame.Height = 65
-                upgradeFrame:setParent(frame)
-                upgradeFrame.LocalPosition = { 0, 10 + (i - 1) * 75 }
-                table.insert(upgradeFrames, upgradeFrame)
-
-                local titleText = ui:createText(upgrade.name, Color.White, "default")
-                titleText:setParent(upgradeFrame)
-                titleText.LocalPosition = { 10, 30 }
-                titleText.FontSize = 10
-
-                local levelText = ui:createText("Level: " .. currentLevel, Color(150, 150, 255), "small")
-                levelText:setParent(upgradeFrame)
-                levelText.LocalPosition = { 10, 8 }
-                levelText.FontSize = 8
-
-                local buyButton = ui:createFrame(Color(0, 0, 0, 0))
-                buyButton.Width = 120
-                buyButton.Height = 40
-                buyButton:setParent(upgradeFrame)
-                buyButton.LocalPosition = { upgradeFrame.Width - buyButton.Width - 10, upgradeFrame.Height / 2 - buyButton.Height / 2 }
-
-                if nextLevel then
-                    local coinIcon = createCoinIcon(buyButton)
-                    coinIcon.LocalPosition = { 5, buyButton.Height / 2 - coinIcon.Height / 2 }
-
-                    local buttonText = ui:createText(tostring(nextLevel.cost), Color.White, "default")
-                    buttonText:setParent(buyButton)
-                    buttonText.Anchor = { 1, 0.5 }
-                    local textPadding = 10
-                    buttonText.LocalPosition = { buyButton.Width - textPadding - buttonText.Width, buyButton.Height / 2 - buttonText.Height / 2 }
-
-                    local canAfford = gameManager._money >= nextLevel.cost
-                    local buttonColor = canAfford and Color.Green or Color(100, 100, 100)
-                    buyButton.Color = buttonColor
-
-                    buyButton.onRelease = function()
-                        if canAfford then
-                            gameManager._money = gameManager._money - nextLevel.cost
-                            playerManager._upgrades[upgradeKey] = currentLevel
-                            sfx("coin_1", { Position = buyButton.Position, Pitch = 0.8, Volume = 0.65 })
-
-                            if refreshUpgrades then
-                                refreshUpgrades()
-                            end
-                        end
-                    end
-                else
-                    levelText.Text = "Max"
-                end
-            end
-        end
-
-        refreshUpgrades()
-    end,
     showHUD = function()
         local uiPadding = uitheme.current.padding * 2
         local hudBackgroundColor = gameConfig.theme.ui.backgroundColor:Copy()
@@ -1491,11 +1494,6 @@ uiManager = {
         frame.Width = 95
         frame.Height = 50
         frame.Position = Number2(Screen.Width - frame.Width - uiPadding, uiPadding)
-
-        local moneyBloc = uiManager.createMoneyComponent(frame.Width)
-        moneyBloc:setParent(frame)
-        moneyBloc.LocalPosition.X = uiPadding
-        moneyBloc.LocalPosition.Y = uiPadding
 
         -- Hunger bar
         local barPadding = 8
@@ -1513,7 +1511,140 @@ uiManager = {
         hungerBar.LocalPosition = Number3(barPadding * 0.5, barPadding * 0.5, 0)
         uiManager._hungerBar = hungerBar
     end,
-    showGameOverScreen = function()
+    showScoreScreen = function()
+        if uiManager._gameOverScreen then
+            uiManager._gameOverScreen:remove()
+            uiManager._gameOverScreen = nil
+        end
+
+        local uiPadding = uitheme.current.padding
+        local textPadding = 10
+
+        local frame = ui:createFrame(gameConfig.theme.ui.backgroundColor)
+        uiManager._gameOverScreen = frame
+
+        frame.Width = 400
+        frame.Height = 500
+        frame.parentDidResize = function()
+            frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 -
+            Screen.SafeArea.Top }
+        end
+        frame:parentDidResize()
+
+        -- Score details
+        local floorReached = math.abs(playerManager._lastFloorReached) - 1
+
+        -- Title
+        local titleText = ui:createText("Game Over!", Color.White, "big")
+        titleText:setParent(frame)
+        titleText.object.Anchor = { 0.5, 0 }
+        titleText.LocalPosition = { frame.Width * 0.5, frame.Height - titleText.Height - uiPadding * 4 }
+
+        -- Score details container
+        local detailsContainer = ui:createFrame(Color(51, 178, 73, 60))
+        detailsContainer:setParent(frame)
+        detailsContainer.Width = frame.Width - uiPadding * 2
+        detailsContainer.Height = 165
+        detailsContainer.LocalPosition = { uiPadding, titleText.LocalPosition.Y - detailsContainer.Height - uiPadding - 20 }
+
+        -- Stats details
+        local createStatLine = function(text, value, y, delay)
+            Timer(delay, false, function()
+                local statText = ui:createText(text, Color.White, "small")
+                statText:setParent(detailsContainer)
+                statText.LocalPosition = { textPadding, y }
+
+                local valueText = ui:createText(tostring(value), Color.White, "small")
+                valueText:setParent(detailsContainer)
+                valueText.object.Anchor = { 1, 0 }
+                valueText.LocalPosition = { detailsContainer.Width - textPadding, y }
+
+                sfx("buttonpositive_2", { Pitch = 1.0 + delay, Volume = 0.65 })
+            end)
+        end
+
+        -- Ajout des lignes de statistiques
+        createStatLine("Ground destroyed", gameManager._stats.destroyedGround, textPadding * 13, 0.1)
+        createStatLine("Props destroyed", gameManager._stats.destroyedProps, textPadding * 10, 0.4)
+        createStatLine("Enemies defeated", gameManager._stats.killedEnnemies, textPadding * 7, 0.7)
+        createStatLine("Food eaten", gameManager._stats.food, textPadding * 4, 1.0)
+        createStatLine("Coins collected", gameManager._stats.coins, textPadding, 1.3)
+
+        -- Création du multiplicateur (Floor reached) sous le container de stats
+        local floorContainer
+        Timer(1.6, false, function()
+            floorContainer = ui:createFrame(Color(255, 189, 3, 60))
+            floorContainer:setParent(frame)
+            floorContainer.Width = frame.Width - uiPadding * 2
+            floorContainer.Height = 50
+            floorContainer.LocalPosition = { uiPadding, detailsContainer.LocalPosition.Y - floorContainer.Height - uiPadding }
+
+            local floorText = ui:createText("Floor reached (multiplier)", Color.White, "small")
+            floorText:setParent(floorContainer)
+            floorText.LocalPosition = { textPadding, floorContainer.Height * 0.5 - 13 }
+
+            local floorValue = ui:createText("×" ..tostring(floorReached), Color.White, "small")
+            floorValue:setParent(floorContainer)
+            floorValue.object.Anchor = { 1, 0.5 }
+            floorValue.LocalPosition = { floorContainer.Width - textPadding, floorContainer.Height * 0.5 }
+
+            sfx("buttonpositive_3", { Pitch = 1.0 , Volume = 0.65 })
+        end)
+
+        local totalScore = (
+            gameManager._stats.coins +
+            gameManager._stats.food +
+            gameManager._stats.killedEnnemies +
+            gameManager._stats.destroyedProps +
+            gameManager._stats.destroyedGround
+        ) * floorReached
+
+        -- Total score
+        local nextButton
+        Timer(2.1, false, function()
+            local totalScoreContainer = ui:createFrame(Color(221, 121, 115, 60))
+            totalScoreContainer:setParent(frame)
+            totalScoreContainer.Width = frame.Width - uiPadding * 2
+            totalScoreContainer.Height = 50
+            totalScoreContainer.LocalPosition = { uiPadding, floorContainer.LocalPosition.Y - totalScoreContainer.Height - uiPadding }
+
+            local scoreTitle = ui:createText("Total Score:", Color.White, "small")
+            scoreTitle:setParent(totalScoreContainer)
+            scoreTitle.object.Anchor = { 0, 0.5 }
+            scoreTitle.LocalPosition = { uiPadding, totalScoreContainer.Height * 0.5 }
+
+            local scoreValue = ui:createText(tostring(totalScore), Color.White, "small")
+            scoreValue:setParent(totalScoreContainer)
+            scoreValue.object.Anchor = { 1, 0.5 }
+            scoreValue.LocalPosition = { totalScoreContainer.Width - textPadding, totalScoreContainer.Height * 0.5 }
+
+            sfx("buttonnegative_1", { Pitch = 0.8 , Volume = 0.65 })
+            nextButton.IsHidden = false
+        end)
+
+        -- Buttons container
+        local buttonsContainer = ui:createFrame(Color(0, 0, 0, 0))
+        buttonsContainer:setParent(frame)
+        buttonsContainer.Width = frame.Width - uiPadding * 2
+        buttonsContainer.Height = 50
+        buttonsContainer.LocalPosition = { uiPadding, uiPadding }
+
+        -- Next button (to leaderboard)
+        nextButton = ui:createButton("Show leaderboard")
+        nextButton.Width = frame.Width - uiPadding * 2
+        nextButton:setColor(Color(70, 129, 244), Color.White)
+        nextButton:setParent(buttonsContainer)
+        nextButton.IsHidden = true
+        nextButton.onRelease = function()
+            if uiManager._gameOverScreen.IsHidden then
+                return
+            end
+
+            sfx("button_5", { Pitch = 1.0 , Volume = 1 })
+            uiManager.showLeaderboardScreen(totalScore, floorReached)
+        end
+    end,
+    showLeaderboardScreen = function(totalScore, floorReached)
         if uiManager._gameOverScreen then
             uiManager._gameOverScreen:remove()
             uiManager._gameOverScreen = nil
@@ -1532,97 +1663,40 @@ uiManager = {
         end
         frame:parentDidResize()
 
-        -- Upgrade button
-        local upgradeButton = ui:createButton("Shop")
-        upgradeButton.Width = 75
-        upgradeButton:setColor(Color.Green, Color.White)
-        upgradeButton:setParent(frame)
-        upgradeButton.Anchor = { 0, 0 }
-        upgradeButton.parentDidResize = function()
-            upgradeButton.LocalPosition = { uiPadding, uiPadding }
-        end
-        upgradeButton:parentDidResize()
-        upgradeButton.onRelease = function()
-            if uiManager._gameOverScreen.IsHidden then
-                return
-            end
-
-            uiManager.showShopScreen()
-        end
-
-        -- New game button
+        -- Try again button at the bottom
         local newGameButton = ui:createButton("Try again")
-        newGameButton.Width = 305
-        newGameButton:setColor(Color.Blue, Color.White)
+        newGameButton.Width = frame.Width - uiPadding * 2
+        newGameButton:setColor(Color(51, 178, 73), Color.White)
         newGameButton:setParent(frame)
-        newGameButton.Anchor = { 0.5, 0 }
-        newGameButton.parentDidResize = function()
-            newGameButton.LocalPosition = { upgradeButton.Width + uiPadding * 2, uiPadding }
-        end
-        newGameButton:parentDidResize()
+        newGameButton.LocalPosition = { uiPadding, uiPadding }
         newGameButton.onRelease = function()
             if uiManager._gameOverScreen.IsHidden then
                 return
             end
 
+            sfx("button_5", { Pitch = 1.0 , Volume = 1 })
             uiManager.hideAllScreens()
             gameManager.startGame()
         end
 
-        local niceLeaderboard = niceLeaderboardModule({
-			extraLine = function(_)
-				return string.format("%.2f miles", 5)
-			end,
-		})
-		niceLeaderboard.Width = frame.Width - uiPadding * 2
-		niceLeaderboard.Height = 390
+        local niceLeaderboard = requireNiceleaderboard()({
+            leaderboardName = "no-elevator",
+			-- extraLine = function(score)
+			-- 	return "max floor: " .. score.value.floorReached
+			-- end,
+        })
+
+        local leaderboard = Leaderboard("no-elevator")
+        leaderboard:set({
+            score = totalScore,
+            value = { totalScore = totalScore, floorReached = floorReached },
+        })
+
         niceLeaderboard:setParent(frame)
-        niceLeaderboard.LocalPosition = { frame.Width / 2 - niceLeaderboard.Width / 2, frame.Height - uiPadding - niceLeaderboard.Height }
+        niceLeaderboard.Width = frame.Width - uiPadding * 2
+        niceLeaderboard.Height = 390
+        niceLeaderboard.LocalPosition = { frame.Width / 2 - niceLeaderboard.Width / 2, uiPadding + newGameButton.Height + uiPadding }
         niceLeaderboard:show()
-    end,
-    showShopScreen = function()
-        if uiManager._gameOverScreen then
-            uiManager._gameOverScreen.IsHidden = true
-        end
-
-        local uiPadding = uitheme.current.padding
-        local frame = ui:createFrame(gameConfig.theme.ui.backgroundColor)
-
-        frame.Width = 400
-        frame.Height = 430
-        frame.parentDidResize = function()
-            frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 -
-            Screen.SafeArea.Top }
-        end
-        frame:parentDidResize()
-
-        local upgradesFrame = ui:createFrame(Color(0, 0, 0, 0))
-		upgradesFrame.Width = frame.Width - uiPadding * 2
-		upgradesFrame.Height = 395
-        upgradesFrame:setParent(frame)
-        upgradesFrame.LocalPosition = { uiPadding, uiPadding + 45 }
-        upgradesFrame.LocalPosition.Z = -1
-
-        local availableUpgrades = {}
-        for key, _ in pairs(upgrades) do
-            table.insert(availableUpgrades, key)
-        end
-        uiManager.createUpgradeComponents(availableUpgrades, upgradesFrame)
-
-        -- Go back button
-        local goBackButton = ui:createButton("Go back")
-        goBackButton.Width = frame.Width - uiPadding * 2
-        goBackButton:setColor(Color.Blue, Color.White)
-        goBackButton:setParent(frame)
-        goBackButton.Anchor = { 0.5, 0 }
-        goBackButton.parentDidResize = function()
-            goBackButton.LocalPosition = { frame.Width / 2 - goBackButton.Width / 2, uiPadding }
-        end
-        goBackButton:parentDidResize()
-        goBackButton.onRelease = function()
-            frame:remove()
-            uiManager._gameOverScreen.IsHidden = false
-        end
     end,
 }
 
@@ -1665,4 +1739,439 @@ Pointer.Down = function()
     elseif not playerManager._digging then
         playerManager.startDigging(1)
     end
+end
+
+-- TODO: remove when the module leaderboard will be ready
+function requireNiceleaderboard()
+	local mod = {}
+
+	local MIN_HEIGHT = 100
+	local MIN_WIDTH = 100
+	local AVATAR_SIZE = 50
+
+	local ui = require("uikit")
+	local theme = require("uitheme").current
+	local conf = require("config")
+	local api = require("api")
+	local uiAvatar = require("ui_avatar")
+
+	local defaultConfig = {
+		leaderboardName = "default",
+		-- function(response) that can return a string to be displayed below score
+		-- response is of this form { score = 1234, updated = OSTime, value = AnyLuaValue }
+		extraLine = nil,
+	}
+
+	setmetatable(mod, {
+		__call = function(_, config)
+			if Client.BuildNumber < 186 then
+				error("niceLeaderboard can only be used from Cubzh 0.1.8", 2)
+			end
+			local ok, err = pcall(function()
+				config = conf:merge(defaultConfig, config, {
+					acceptTypes = {
+						leaderboardName = { "string" },
+						extraLine = { "function" },
+					},
+				})
+			end)
+			if not ok then
+				error("niceLeaderboard(config) - config error: " .. err, 2)
+			end
+
+			local status = "loading"
+			local leaderboard
+
+			local requests = {}
+			local nbUserInfoToFetch = 0
+			local pendingUserInfoRequestScore = {} -- requests to retrieve user info
+
+			local function cancelRequests()
+				for _, r in ipairs(requests) do
+					r:Cancel()
+				end
+				requests = {}
+				nbUserInfoToFetch = 0
+				pendingUserInfoRequestScore = {}
+			end
+
+			-- cache for users (usernames, avatars)
+			local users = {}
+			local friendScores = {}
+
+			local recycledCells = {}
+
+			local cellSelector = ui:frameScrollCellSelector()
+			cellSelector:setParent(nil)
+
+			local scroll
+
+			local cellParentDidResize = function(self)
+				local parent = scroll
+				if parent == nil then
+					return
+				end
+				self.Width = parent.Width - 4
+
+				local availableWidth = self.Width - theme.padding * 3 - AVATAR_SIZE
+
+				self.username.object.Scale = 1
+				local scale = math.min(1, availableWidth / self.username.Width)
+				self.username.object.Scale = scale
+
+				self.score.object.Scale = 1
+				scale = math.min(1, availableWidth / self.score.Width)
+				self.score.object.Scale = scale
+
+				self.Height = self.score.Height + self.username.Height + theme.padding * 2
+
+				if self.extraLine:isVisible() then
+					self.Height = self.Height + self.extraLine.Height
+					self.extraLine.object.Scale = 1
+					scale = math.min(1, availableWidth / self.extraLine.Width)
+					self.extraLine.object.Scale = scale
+				end
+
+				self.username.pos = {
+					theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.username.Width * 0.5,
+					self.Height - self.username.Height - theme.padding,
+				}
+				self.score.pos = {
+					theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.score.Width * 0.5,
+					self.username.pos.Y - self.score.Height,
+				}
+				self.extraLine.pos = {
+					theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.extraLine.Width * 0.5,
+					self.score.pos.Y - self.extraLine.Height,
+				}
+
+				self.avatar.pos = {
+					theme.padding,
+					self.Height * 0.5 - AVATAR_SIZE * 0.5 + theme.paddingTiny,
+				}
+
+				if self.userID == Player.UserID then
+					cellSelector:setParent(self)
+					cellSelector.Width = self.Width
+					cellSelector.Height = self.Height
+				end
+			end
+
+			local function formatNumber(num)
+				local formatted = tostring(num)
+				local k
+				while true do
+					formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+					if k == 0 then
+						break
+					end
+				end
+				return formatted
+			end
+
+			local messageCell
+
+			local functions = {}
+
+			local loadCell = function(index)
+				if status == "scores" then
+					if index <= #friendScores then
+						local cell = table.remove(recycledCells)
+						if cell == nil then
+							cell = ui:frameScrollCell()
+
+							cell.username = ui:createText("", { color = Color.White })
+							cell.username:setParent(cell)
+
+							cell.score = ui:createText("", { color = Color(200, 200, 200) })
+							cell.score:setParent(cell)
+
+							cell.extraLine = ui:createText("", { color = Color(100, 100, 100), size = "small" })
+							cell.extraLine:setParent(cell)
+
+							cell.avatar = uiAvatar:getHeadAndShoulders({
+								-- usernameOrId = score.userID,
+							})
+							cell.avatar:setParent(cell)
+							cell.avatar.Width = AVATAR_SIZE
+							cell.avatar.Height = AVATAR_SIZE
+
+							cell.parentDidResize = cellParentDidResize
+							cell.onPress = function(_)
+								cell:getQuad().Color = Color(220, 220, 220)
+								Client:HapticFeedback()
+							end
+
+							cell.onRelease = function(self)
+								if self.userID ~= nil and self.username.Text ~= nil then
+									Menu:ShowProfile({
+										id = self.userID,
+										username = self.username.Text,
+									})
+								end
+								cell:getQuad().Color = Color.White
+							end
+
+							cell.onCancel = function(_)
+								cell:getQuad().Color = Color.White
+							end
+						end
+
+						local score = friendScores[index]
+
+						cell.userID = score.userID
+						cell.username.Text = score.user.username
+						cell.score.Text = formatNumber(score.score)
+						cell.avatar:load({ usernameOrId = score.userID })
+
+						cell:getQuad().Color = Color.White
+
+						if config.extraLine ~= nil then
+							cell.extraLine.Text = config.extraLine(score)
+							cell.extraLine:show()
+						else
+							cell.extraLine:hide()
+						end
+
+						cell:parentDidResize()
+
+						return cell
+					end
+				elseif status == "no_scores" or status == "error" then
+					if index == 1 then
+						if messageCell == nil then
+							messageCell = ui:frame()
+
+							messageCell.label = ui:createText("This is a test", { color = Color.White, size = "small" })
+							messageCell.label:setParent(messageCell)
+
+							messageCell.btn = ui:buttonNeutral({ content = "Test", textSize = "small" })
+							messageCell.btn:setParent(messageCell)
+
+							messageCell.parentDidResize = function(self)
+								local parent = scroll
+								if parent == nil then
+									return
+								end
+								self.Width = parent.Width - 4
+
+								messageCell.label.object.MaxWidth = self.Width - theme.padding * 2
+
+								self.Height = math.max(
+									parent.Height - 4,
+									messageCell.label.Height + self.btn.Height + theme.padding * 3
+								)
+
+								local h = self.btn.Height + theme.padding + self.label.Height
+								local y = self.Height * 0.5 - h * 0.5
+
+								self.btn.pos = {
+									self.Width * 0.5 - self.btn.Width * 0.5,
+									y,
+								}
+								self.label.pos = {
+									self.Width * 0.5 - self.label.Width * 0.5,
+									self.btn.pos.Y + self.btn.Height + theme.padding,
+								}
+							end
+						end
+
+						if status == "no_scores" then
+							messageCell.label.Text = "No scores to display yet!"
+							messageCell.btn.Text = "👥 Add Friends"
+							messageCell.btn.onRelease = function()
+								Menu:ShowFriends()
+							end
+						else
+							messageCell.label.Text = "❌ Error: couldn't load scores."
+							messageCell.btn.Text = "Retry"
+							messageCell.btn.onRelease = function()
+								functions.refresh()
+							end
+						end
+
+						messageCell:parentDidResize()
+
+						return messageCell
+					end
+				end
+			end
+
+			local unloadCell = function(_, cell)
+				cell:setParent(nil)
+				if cell ~= messageCell then
+					table.insert(recycledCells, cell)
+				end
+			end
+
+			local node = ui:frameTextBackground()
+
+			scroll = ui:scroll({
+				backgroundColor = theme.buttonTextColor,
+				padding = 2,
+				cellPadding = 2,
+				direction = "down",
+				-- centerContent = true,
+				loadCell = loadCell,
+				unloadCell = unloadCell,
+			})
+			scroll:setParent(node)
+			scroll.pos = {
+				theme.padding,
+				theme.padding,
+			}
+			scroll:hide()
+
+			local loading = require("ui_loading_animation"):create({ ui = ui })
+			loading.parentDidResize = function(self)
+				local parent = self.parent
+				loading.pos = {
+					parent.Width * 0.5 - loading.Width * 0.5,
+					parent.Height * 0.5 - loading.Height * 0.5,
+				}
+			end
+			loading:setParent(node)
+
+			node.parentDidResizeSystem = function(self)
+				self.Width = math.max(MIN_WIDTH, self.Width)
+				self.Height = math.max(MIN_HEIGHT, self.Height)
+
+				scroll.Width = self.Width - theme.padding * 2
+				scroll.Height = self.Height - theme.padding * 2
+			end
+			node:parentDidResizeSystem()
+
+			local localUserScrollIndex
+
+			local function refresh()
+				if nbUserInfoToFetch > 0 then
+					return
+				end
+
+				loading:hide()
+				scroll:flush()
+				scroll:refresh()
+				scroll:show()
+
+				if localUserScrollIndex ~= nil then
+					scroll:setScrollIndexVisible(localUserScrollIndex)
+				end
+
+				node:parentDidResizeSystem()
+				if node.parentDidResize then
+					node:parentDidResize()
+				end
+			end
+			functions.refresh = refresh
+
+			local function displayScores(scores)
+				status = "scores"
+				nbUserInfoToFetch = #scores
+				localUserScrollIndex = nil
+
+				friendScores = scores
+
+				for i, s in ipairs(friendScores) do
+					if s.userID == Player.UserID then
+						localUserScrollIndex = i
+					end
+
+					if users[s.userID] ~= nil then
+						s.user = users[s.userID]
+						nbUserInfoToFetch = nbUserInfoToFetch - 1
+						refresh()
+					else
+						if pendingUserInfoRequestScore[s.userID] == nil then
+							local req = api:getUserInfo(s.userID, function(userInfo, err)
+								if err ~= nil then
+									pendingUserInfoRequestScore[s.userID] = nil
+									return
+								end
+								pendingUserInfoRequestScore[s.userID] = nil
+								users[s.userID] = {
+									username = userInfo.username,
+								}
+								s.user = users[s.userID]
+								nbUserInfoToFetch = nbUserInfoToFetch - 1
+								refresh()
+							end, {
+								"username",
+							})
+							pendingUserInfoRequestScore[s.userID] = s
+							table.insert(requests, req)
+						end
+					end
+				end
+			end
+
+			leaderboard = Leaderboard(config.leaderboardName)
+
+			local function load()
+				status = "loading"
+				cancelRequests()
+				friendScores = {}
+
+				cellSelector:setParent(nil)
+				scroll:hide()
+				scroll:flush()
+				loading:show()
+
+				-- fetch best scores first
+				-- load neighbors only if user not in top 5
+				local req = leaderboard:get({
+					mode = "best",
+					friends = true,
+					limit = 10,
+					callback = function(scores, err)
+						if err ~= nil then
+							if string.find(err, "404") then
+								status = "no_scores"
+							else
+								status = "error"
+							end
+							refresh()
+							return
+						end
+
+						for _, s in ipairs(scores) do
+							if s.userID == Player.UserID then
+								-- found user in top, display scores!
+								displayScores(scores)
+								return
+							end
+						end
+
+						-- local user not in top, get neighbors instead
+						cancelRequests()
+						local req = leaderboard:get({
+							mode = "neighbors",
+							friends = true,
+							limit = 10,
+							callback = function(scores, err)
+								if err ~= nil then
+									if string.find(err, "404") then
+										status = "no_scores"
+									else
+										status = "error"
+									end
+									refresh()
+									return
+								end
+								displayScores(scores)
+							end,
+						})
+						table.insert(requests, req)
+					end,
+				})
+				table.insert(requests, req)
+			end
+
+			node.reload = load
+			load()
+
+			return node
+		end,
+	})
+
+	return mod
 end
