@@ -78,10 +78,10 @@ local gameConfig = {
     floorInMemoryMax = 8,
     moneyProbability = 0.3,
     bonusProbability = 0.05,
+    foodProbability = 0.01,
     bonusesRotationSpeed = 1.5 * math.pi,
     music = "https://raw.githubusercontent.com/Donorhan/cubzh-library/main/game-musics/bit-bop.mp3",
     musicVolume = 0.5,
-    foodSpawnFloorInterval = Number2(4, 7),
     camera = {
         followSpeed = 0.05,
         defaultZoom = -175,
@@ -119,6 +119,13 @@ local gameConfig = {
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
         bumpVelocity = Number2(0, 170), -- Bump velocity when player jump on something
+    },
+    points = {
+        food = 100,
+        destroyedGround = 1,
+        destroyedProps = 10,
+        coin = 1,
+        killedEnnemies = 25,
     },
     ennemies = {
         police = {
@@ -188,6 +195,7 @@ spawners = {
                 sfx("eating_4", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
                 playerManager._hunger = math.max(0, playerManager._hunger - gameConfig.player.foodBonusTimeAdded)
                 gameManager.increaseStat("food", 1, bonus)
+                spawners.spawnPointsText(Player.Position + Number3(0, 25, 0), gameConfig.points.food)
             end
         elseif bonusType == GAME_BONUSES.COIN then
             bonus = Shape(Items.vico.coin)
@@ -248,6 +256,25 @@ spawners = {
         bonus.LocalPosition = Number3(position.X, -30, 0)
 
         return bonus
+    end,
+    spawnPointsText = function(position, pointsCount)
+        local t = Text()
+        t.Text = "+" .. pointsCount
+        t.IsUnlit = true
+        t.Tail = true
+        t.Color = Color.White
+        t.FontSize = 8
+        t.BackgroundColor = Color(0, 0, 0, 0)
+        t:SetParent(World)
+        t.Position = position
+
+        t.Tick = function (self, dt)
+            t.Position.Y = t.Position.Y + (22 * dt)
+        end
+
+        Timer(0.5, false, function()
+            t:RemoveFromParent()
+        end)
     end,
     spawnCoins = function(room)
         local position = spawners.randomPositionInRoom(40, 0)
@@ -328,6 +355,7 @@ spawners = {
                     { Position = npc.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
                 playerManager.calmDownAnger(1)
                 gameManager.increaseStat("killedEnnemies", 1, npc)
+                spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.killedEnnemies)
             elseif reason == GAME_DEAD_REASON.FALL_DAMAGE then
                 sfx("hurt_scream_male_" .. math.random(1, 5),
                     { Position = npc.Position, Pitch = 0.5 + math.random() * 0.15, Volume = 0.65 })
@@ -768,7 +796,7 @@ levelManager = {
         floorCollider.Physics = PhysicsMode.StaticPerBlock
         local impactPosition = impact.Block.Coordinates
         floorCollider.room:createHoleFromBlockCoordinates(Face.Bottom, impactPosition, gameConfig.player.floorImpactSize)
-        playerManager.calmDownAnger(0.25)
+        playerManager.calmDownAnger(0.1)
         gameManager.increaseStat("destroyedGround", 1, nil)
     end,
     damageProp = function(prop, _)
@@ -784,6 +812,7 @@ levelManager = {
             prop:RemoveFromParent()
             playerManager.calmDownAnger(3)
             gameManager.increaseStat("destroyedProps", 1, prop)
+            spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.destroyedProps)
         end
     end,
     prepareProp = function(floor, prop, soundDamage, destroySound, collide)
@@ -1147,7 +1176,7 @@ levelManager = {
             levelManager._floorWithoutZombieCount = levelManager._floorWithoutZombieCount + 1
         end
 
-        if spawners.lastFoodSpawnedFloorCount > math.random(gameConfig.foodSpawnFloorInterval.X, gameConfig.foodSpawnFloorInterval.Y) then
+        if math.random() < gameConfig.foodProbability then
             spawners.spawnBonus(floor, GAME_BONUSES.FOOD)
             spawners.lastFoodSpawnedFloorCount = 0
         else
@@ -1593,10 +1622,10 @@ uiManager = {
 
         local totalScore = (
             gameManager._stats.coins +
-            gameManager._stats.food +
-            gameManager._stats.killedEnnemies +
-            gameManager._stats.destroyedProps +
-            gameManager._stats.destroyedGround
+            gameManager._stats.food * gameConfig.points.food +
+            gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies +
+            gameManager._stats.destroyedProps * gameConfig.points.destroyedProps +
+            gameManager._stats.destroyedGround * gameConfig.points.destroyedGround
         ) * floorReached
 
         -- Total score
