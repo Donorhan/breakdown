@@ -20,8 +20,6 @@ Config = {
     Items = {
         "vico.coin",
         "littlecreator.dumbell",
-        "pratamacam.shortcake_slice",
-        "mrchispop.heart",
         "claire.desk7",
         "piaa.book_shelf",
         "claire.sofa2",
@@ -483,9 +481,9 @@ gameManager = {
     end,
     initCamera = function()
         local cameraContainer = Object()
-        cameraContainer.decay = 1.1
-        cameraContainer.shakeMaxAmplitude = Number2(1.5, 4)
-        cameraContainer.traumaPower = 2.0
+        cameraContainer.decay = 2
+        cameraContainer.shakeMaxAmplitude = Number2(6, 12)
+        cameraContainer.traumaPower = 1.5
         cameraContainer.trauma = 0
         cameraContainer:SetParent(World)
 
@@ -494,38 +492,43 @@ gameManager = {
         Camera:SetParent(World)
         Camera:SetModeFree()
         Camera.Rotation:Set(0, 0, 0)
+        cameraContainer.time = 0
 
         cameraContainer.Tick = function(_, dt)
             local playerPositionY = Player.Position.Y + gameConfig.camera.playerOffset.Y
             if playerPositionY < cameraContainer.targetFollower.LocalPosition.Y then
                 cameraContainer.targetFollower.LocalPosition.Y = playerPositionY
             end
-
+        
             if not gameConfig.camera.lockTranslationOnY then
                 cameraContainer.targetFollower.LocalPosition.X = Player.Position.X + gameConfig.camera.playerOffset.X
             else
                 cameraContainer.targetFollower.LocalPosition.X = 0
             end
 
-            cameraContainer.Position.X = 0
-            cameraContainer.Position.Y = 0
+            local shakeOffset = Number3.Zero
             if cameraContainer.trauma ~= 0 then
-                local shakeAmountX = cameraContainer.shakeMaxAmplitude.X * (cameraContainer.trauma ^ 2)
-                local shakeAmountY = cameraContainer.shakeMaxAmplitude.Y * (cameraContainer.trauma ^ 2)
-                local shakeX = (math.random() * 2 - 1) * shakeAmountX
-                local shakeY = (math.random() * 2 - 1) * shakeAmountY
+                cameraContainer.time = cameraContainer.time + dt * 10
 
-                cameraContainer.Position.X = cameraContainer.Position.X + shakeX
-                cameraContainer.Position.Y = cameraContainer.Position.Y + shakeY
+                local traumaSquared = cameraContainer.trauma ^ cameraContainer.traumaPower
+                
+                local noiseX = math.sin(cameraContainer.time * 5.37) + math.sin(cameraContainer.time * 8.17) * 0.7
+                local noiseY = math.cos(cameraContainer.time * 6.71) + math.cos(cameraContainer.time * 9.23) * 0.7
+
+                shakeOffset.X = noiseX * traumaSquared * cameraContainer.shakeMaxAmplitude.X
+                shakeOffset.Y = noiseY * traumaSquared * cameraContainer.shakeMaxAmplitude.Y
+                
                 cameraContainer.trauma = math.max(0, cameraContainer.trauma - cameraContainer.decay * dt)
             end
 
+            cameraContainer.Position = shakeOffset
+        
             local lerpedPositionY = (cameraContainer.targetFollower.Position.Y - Camera.Position.Y) * gameConfig.camera.followSpeed
             Camera.Position.Y = Camera.Position.Y + lerpedPositionY
-
+        
             local lerpedPositionX = (cameraContainer.targetFollower.Position.X - Camera.Position.X) * gameConfig.camera.followSpeed
             Camera.Position.X = Camera.Position.X + lerpedPositionX
-
+        
             local lerpedPositionZ = (gameConfig.camera.playerOffset.Z - Camera.Position.Z) * gameConfig.camera.followSpeed
             Camera.Position.Z = Camera.Position.Z + lerpedPositionZ
         end
@@ -727,7 +730,7 @@ levelManager = {
             return
         end
 
-        gameManager._cameraContainer.shake(5)
+        gameManager._cameraContainer.shake(50)
         sfx("wood_impact_3", { Position = floorCollider.Position, Pitch = 0.5 + math.random() * 0.2, Volume = 0.65 })
         Client:HapticFeedback()
         for _ = 0, 10 do
@@ -1331,12 +1334,12 @@ playerManager = {
             end
 
             -- Jump on ennemies
-            if normal.Y > 0.8 then -- playerManager._hasBackpack and 
+            if normal.Y > 0.8 then
                 collider.takeDamage(1, GAME_DEAD_REASON.TRAMPLED)
                 playerManager.stopDigging()
                 Player.Velocity.Y = gameConfig.player.bumpVelocity.Y
                 Client:HapticFeedback()
-                gameManager._cameraContainer.shake(2)
+                gameManager._cameraContainer.shake(50)
                 return
             end
 
@@ -1349,7 +1352,7 @@ playerManager = {
                 return
             end
 
-            gameManager._cameraContainer.shake(2)
+            gameManager._cameraContainer.shake(150)
             levelManager.damageProp(collider, 1)
             playerManager.stopDigging()
             Player.Velocity.Y = gameConfig.player.bumpVelocity.Y
@@ -1358,7 +1361,7 @@ playerManager = {
     end,
     takeDamage = function(damageCount, knockback)
         playerManager._life = playerManager._life - 1
-        gameManager._cameraContainer.shake(damageCount * 3)
+        gameManager._cameraContainer.shake(damageCount * 50)
         Player.Velocity.X = knockback.X
         Player.Velocity.Y = knockback.Y
 
@@ -1372,7 +1375,6 @@ playerManager = {
     onKilled = function(_)
         Player.IsHidden = true
         explode(Player.Body)
-       -- dustify(Player.Body, { direction = Player.Motion, velocity = Number3(50, 100, 5), bounciness = 0.3 })
         Player.Motion:Set(0, 0, 0)
         Player.Physics = PhysicsMode.Disabled
         Player.IsHidden = true
