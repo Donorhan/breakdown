@@ -377,7 +377,7 @@ spawners = {
         npc.OnCollisionBegin = function(self, collider, normal)
             if collider.CollisionGroups == COLLISION_GROUP_WALL or collider.CollisionGroups == COLLISION_GROUP_PROPS then
                 if math.abs(normal.X) > 0.5 then
-                    npc.setDirectionLeft(self.Position.X > 0)
+                    npc.setDirectionLeft(self.Motion.X > 0)
                 end
             elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
                 if normal.Y >= 1.0 then
@@ -429,70 +429,6 @@ spawners = {
         end
     end,
 }
-
-spawners.createLaser = function()
-    local HSLColor = { h = 360, s = 84, l = 60 }
-    local coreColor = helpers.colors.HSLToRGB(HSLColor.h, HSLColor.s, HSLColor.l)
-    coreColor.A = 200
-
-    local outlineColor = helpers.colors.HSLToRGB(HSLColor.h, HSLColor.s, HSLColor.l * 0.7)
-    outlineColor.A = 120
-
-    local laserCore = MutableShape()
-    laserCore:AddBlock(coreColor, 0, 0, 0)
-    laserCore.Pivot = Number3(0.5, 0.5, 0)
-    laserCore.Scale = Number3(1.5, 1.5, 2)
-    laserCore.CollisionGroups = COLLISION_GROUP_NONE
-    laserCore.CollidesWithGroups = COLLISION_GROUP_NONE
-    laserCore.Physics = PhysicsMode.Disabled
-    laserCore.IsUnlit = true
-
-    local laserOutline = MutableShape()
-    laserOutline:AddBlock(outlineColor, 0, 0, 0)
-    laserOutline.Pivot = Number3(0.5, 0.5, 0)
-    laserOutline.Scale = Number3(4, 4, 2)
-    laserOutline.CollisionGroups = COLLISION_GROUP_NONE
-    laserOutline.CollidesWithGroups = COLLISION_GROUP_NONE
-    laserOutline.Physics = PhysicsMode.Disabled
-    laserOutline.IsUnlit = true
-
-    local laserComplete = Object()
-    laserOutline:SetParent(laserComplete)
-    laserCore:SetParent(laserComplete)
-    laserComplete.CollisionGroups = COLLISION_GROUP_NONE
-    laserComplete.CollidesWithGroups = COLLISION_GROUP_NONE
-    laserComplete.Physics = PhysicsMode.Disabled
-    laserComplete.LocalPosition = Number3(0, 0, -50)
-
-    local minScale = 0.8
-    local maxScale = 1.2
-    local currentScale = minScale
-    local targetScale = maxScale
-    local lerpSpeed = 40.0
-
-    local ray = Ray(laserComplete.Position, Number3(1, 0, 0))
-    laserComplete.Tick = function(self, dt)
-        self.LocalRotation.Y = self.LocalRotation.Y + (dt * math.pi) * 0.4
-        
-        currentScale = currentScale + (targetScale - currentScale) * lerpSpeed * dt
-        if math.abs(currentScale - targetScale) < 0.1 then
-            targetScale = targetScale == maxScale and minScale or maxScale
-        end
-
-        laserComplete.Scale.X = currentScale
-        laserComplete.Scale.Y = currentScale
-
-        ray.Direction = self.Forward
-        local impact = ray:Cast(COLLISION_GROUP_WALL + COLLISION_GROUP_PLAYER, COLLISION_GROUP_PROPS, true)
-        if impact == nil then
-            laserComplete.Scale.Z = 100
-        elseif impact.Distance then
-            laserComplete.Scale.Z = impact.Distance * 0.5
-        end
-    end
-
-    return laserComplete
-end
 
 -----------------
 -- Game manager
@@ -905,12 +841,6 @@ levelManager = {
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth)
-
-            -- local laser = spawners.createLaser()
-            -- --prepareProp(laser, "laser_hit", "laser_explode", true)
-            -- laser.LocalPosition = Number3(0, 10, -20) -- Ajustez la position selon vos besoins
-            -- laser:SetParent(floor)
-
         elseif randomConfig == 2 then
             local prop = Shape(Items.claire.desk7)
             levelManager.prepareProp(floor, prop)
@@ -1518,7 +1448,7 @@ uiManager = {
         local hudBackgroundColor = gameConfig.theme.ui.backgroundColor:Copy()
         hudBackgroundColor.A = 150
 
-        local frame = ui:createFrame(hudBackgroundColor)
+        local frame = ui:createFrame(Color(0, 0, 0, 0))
         uiManager._HUDScreen = frame
         frame.Width = 95
         frame.Height = 50
@@ -1665,7 +1595,7 @@ uiManager = {
         nextButton:setParent(buttonsContainer)
         nextButton.IsHidden = true
         nextButton.onRelease = function()
-            if uiManager._gameOverScreen.IsHidden then
+            if uiManager._gameOverScreen.IsHidden or nextButton.IsHidden then
                 return
             end
 
