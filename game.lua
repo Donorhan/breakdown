@@ -99,12 +99,12 @@ local gameConfig = {
     theme = {
         room = {
             saturation = 18,
-            backgroundLightness = 51,
+            backgroundLightness = 55,
             wallLightness = 36,
             exteriorColor = Color(180, 180, 180),
         },
         ui = {
-            backgroundColor = Color(42, 50, 61),
+            backgroundColor = Color(32, 37, 48, 220),
             hungerBar = {
                 width = 20,
                 height = Screen.Height * 0.5,
@@ -1631,7 +1631,7 @@ uiManager = {
         uiManager._gameOverScreen = frame
 
         frame.Width = 400
-        frame.Height = 500
+        frame.Height = 400
         frame.parentDidResize = function()
             if Client.IsMobile then
                 frame.Width = Screen.Width - uiPadding * 4
@@ -1667,49 +1667,61 @@ uiManager = {
         titleText.LocalPosition = { frame.Width * 0.5, frame.Height - titleText.Height - uiPadding * 4 }
 
         -- Score details container
-        local detailsContainer = ui:createFrame(Color(51, 178, 73, 60))
+        local lineHeight = 36
+        local linePadding = 4
+        local lineColor = Color(255, 255, 255, 50)
+        local detailsContainer = ui:createFrame(Color(0, 0, 0, 0))
+        local darkTextColor = Color(32, 37, 48, 255)
         detailsContainer:setParent(frame)
-        detailsContainer.Width = frame.Width - uiPadding * 2
-        detailsContainer.Height = 137
-        detailsContainer.LocalPosition = { uiPadding, titleText.LocalPosition.Y - detailsContainer.Height - uiPadding - 20 }
+        detailsContainer.Width = frame.Width - uiPadding * 4
+        detailsContainer.Height = (lineHeight + linePadding) * 4 - linePadding
+        detailsContainer.LocalPosition = { uiPadding * 2, titleText.LocalPosition.Y - detailsContainer.Height - uiPadding - 20 }
 
         -- Stats details
         local createStatLine = function(text, value, y, delay)
             Timer(delay, false, function()
+                local statFrame = ui:createFrame(lineColor)
+                statFrame:setParent(detailsContainer)
+                statFrame.Width = detailsContainer.Width
+                statFrame.Height = lineHeight
+                statFrame.LocalPosition = { 0, y }
+
                 local statText = ui:createText(text, Color.White, "small")
-                statText:setParent(detailsContainer)
-                statText.LocalPosition = { textPadding, y }
+                statText:setParent(statFrame)
+                statText.LocalPosition = { 8, statFrame.Height * 0.5 - statText.Height * 0.5 }
 
                 local valueText = ui:createText(tostring(value), Color.White, "small")
-                valueText:setParent(detailsContainer)
+                valueText:setParent(statFrame)
                 valueText.object.Anchor = { 1, 0 }
-                valueText.LocalPosition = { detailsContainer.Width - textPadding, y }
+                valueText.LocalPosition = { statFrame.Width - 8, statFrame.Height * 0.5 - valueText.Height * 0.5 }
 
                 sfx("buttonpositive_2", { Pitch = 1.0 + delay, Volume = 0.65 })
             end)
         end
 
-        createStatLine("Props destroyed", gameManager._stats.destroyedProps * gameConfig.points.destroyedProps, textPadding * 10, 0.4)
-        createStatLine("Enemies defeated", gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies, textPadding * 7, 0.7)
-        createStatLine("Food eaten", gameManager._stats.food * gameConfig.points.food, textPadding * 4, 1.0)
-        createStatLine("Coins collected", gameManager._stats.coins, textPadding, 1.3)
+        createStatLine("Props destroyed", gameManager._stats.destroyedProps * gameConfig.points.destroyedProps, (lineHeight + linePadding) * 3, 0.4)
+        createStatLine("Enemies defeated", gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies, (lineHeight + linePadding) * 2, 0.7)
+        createStatLine("Food eaten", gameManager._stats.food * gameConfig.points.food, lineHeight + linePadding, 1.0)
+        createStatLine("Coins collected", gameManager._stats.coins, 0, 1.3)
 
         local floorContainer
         Timer(1.6, false, function()
-            floorContainer = ui:createFrame(Color(255, 189, 3, 60))
+            floorContainer = ui:createFrame(Color(227, 208, 129))
             floorContainer:setParent(frame)
-            floorContainer.Width = frame.Width - uiPadding * 2
-            floorContainer.Height = 50
-            floorContainer.LocalPosition = { uiPadding, detailsContainer.LocalPosition.Y - floorContainer.Height - uiPadding }
+            floorContainer.Width = frame.Width - uiPadding * 4
+            floorContainer.Height = lineHeight
+            floorContainer.LocalPosition = { uiPadding * 2, detailsContainer.LocalPosition.Y - floorContainer.Height - uiPadding }
 
-            local floorText = ui:createText("Floor reached (multiplier)", Color.White, "small")
+            local floorText = ui:createText("Floor reached", Color.White, "small")
             floorText:setParent(floorContainer)
             floorText.LocalPosition = { textPadding, floorContainer.Height * 0.5 - 13 }
+            floorText.Color = darkTextColor
 
             local floorValue = ui:createText("×" ..tostring(floorReached), Color.White, "small")
             floorValue:setParent(floorContainer)
             floorValue.object.Anchor = { 1, 0.5 }
             floorValue.LocalPosition = { floorContainer.Width - textPadding, floorContainer.Height * 0.5 }
+            floorValue.Color = darkTextColor
 
             sfx("buttonpositive_3", { Pitch = 1.0 , Volume = 0.65 })
         end)
@@ -1717,18 +1729,18 @@ uiManager = {
         -- Total score
         local nextButton
         Timer(2.1, false, function()
-            local totalScoreContainer = ui:createFrame(Color(221, 121, 115, 60))
+            local totalScoreContainer = ui:createFrame(Color(0, 0, 0, 0))
             totalScoreContainer:setParent(frame)
-            totalScoreContainer.Width = frame.Width - uiPadding * 2
-            totalScoreContainer.Height = 50
-            totalScoreContainer.LocalPosition = { uiPadding, floorContainer.LocalPosition.Y - totalScoreContainer.Height - uiPadding }
+            totalScoreContainer.Width = frame.Width - uiPadding * 4
+            totalScoreContainer.Height = lineHeight
+            totalScoreContainer.LocalPosition = { uiPadding * 2, uiPadding }
 
-            local scoreTitle = ui:createText("Total Score", Color.White, "small")
+            local scoreTitle = ui:createText("Total Score", Color.White, "default")
             scoreTitle:setParent(totalScoreContainer)
             scoreTitle.object.Anchor = { 0, 0.5 }
-            scoreTitle.LocalPosition = { uiPadding, totalScoreContainer.Height * 0.5 }
+            scoreTitle.LocalPosition = { textPadding, totalScoreContainer.Height * 0.5 }
 
-            local scoreValue = ui:createText(tostring(totalScore), Color.White, "small")
+            local scoreValue = ui:createText(tostring(totalScore), Color.White, "big")
             scoreValue:setParent(totalScoreContainer)
             scoreValue.object.Anchor = { 1, 0.5 }
             scoreValue.LocalPosition = { totalScoreContainer.Width - textPadding, totalScoreContainer.Height * 0.5 }
@@ -1740,13 +1752,14 @@ uiManager = {
         -- Buttons container
         local buttonsContainer = ui:createFrame(Color(0, 0, 0, 0))
         buttonsContainer:setParent(frame)
-        buttonsContainer.Width = frame.Width - uiPadding * 2
-        buttonsContainer.Height = 50
-        buttonsContainer.LocalPosition = { uiPadding, uiPadding }
+        buttonsContainer.Width = frame.Width
+        buttonsContainer.Height = 40
+        buttonsContainer.LocalPosition = { 0, -buttonsContainer.Height - uiPadding }
 
         -- Next button (to leaderboard)
         nextButton = ui:createButton("Show leaderboard")
-        nextButton.Width = frame.Width - uiPadding * 2
+        nextButton.Width = buttonsContainer.Width
+        nextButton.Height = buttonsContainer.Height
         nextButton:setColor(Color(70, 129, 244), Color.White)
         nextButton:setParent(buttonsContainer)
         nextButton.IsHidden = true
@@ -1784,7 +1797,6 @@ uiManager = {
         end
         frame:parentDidResize()
 
-        -- Try again button at the bottom
         local newGameButton = ui:createButton("Try again")
         newGameButton.Width = frame.Width - uiPadding * 2
         newGameButton:setColor(Color(51, 178, 73), Color.White)
