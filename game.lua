@@ -25,8 +25,12 @@ Config = {
         "claire.sofa2",
         "claire.office_cabinet",
         "boumety.shelf3",
-        "claire.office_door",
         "uevoxel.antena02",
+        "uevoxel.bed",
+        "kooow.bathtub_with_yl_duck",
+        "wrden.bathroom_cabinet",
+        "voxels.clothes_rack",
+        "voxels.sidetable_4",
         "kooow.cardboard_box_long",
         "kooow.cardboard_box_small",
         "kooow.solarpanel",
@@ -36,6 +40,7 @@ Config = {
         "kooow.table_round_gwcloth",
         "claire.painting15",
         "claire.painting6",
+        "claire.painting9",
         "uevoxel.gym01",
         "chocomatte.treadmill",
         "uevoxel.couch",
@@ -56,7 +61,7 @@ Config = {
 -----------------
 local GAME_BONUSES = { DIG_FAST = 1, FOOD = 2, COIN = 3 }
 local GAME_DEAD_REASON = { STARVING = 1, DAMAGE = 1, TRAMPLED = 2, FALL_DAMAGE = 3 }
-local ROOM_DIMENSIONS = Number3(140, 65, 48)
+local ROOM_DIMENSIONS = Number3(140, 62, 48)
 local COLLISION_GROUP_PLAYER = CollisionGroups(1)
 local COLLISION_GROUP_FLOOR_BELOW = CollisionGroups(2)
 local COLLISION_GROUP_WALL = CollisionGroups(3)
@@ -70,6 +75,7 @@ local gameManager = {}
 local levelManager = {}
 local playerManager = {}
 local uiManager = {}
+local leaderboard = nil
 
 local gameConfig = {
     gravity = Number3(0, -850, 0),
@@ -94,14 +100,15 @@ local gameConfig = {
             saturation = 18,
             backgroundLightness = 51,
             wallLightness = 36,
-            exteriorColor = Color(150, 150, 150),
+            exteriorColor = Color(180, 180, 180),
         },
         ui = {
             backgroundColor = Color(42, 50, 61),
             hungerBar = {
-                width = 30,
-                height = 250,
-                colorHSL = { 131, 56, 46 },
+                width = 20,
+                height = Screen.Height * 0.5,
+                colorHSL = { 131, 78, 65 },
+                padding = 4,
             }
         },
         roomOffsetZ = ROOM_DIMENSIONS.Z * 0.5,
@@ -137,6 +144,12 @@ local gameConfig = {
         boumety = "",
         pratamacam = "",
     },
+    howTo = {
+        jumpState = false,
+        jumpText = nil,
+        digState = false,
+        digText = nil,
+    },
 }
 
 
@@ -151,6 +164,23 @@ local followPlayerPosition = function (avatar)
 
     local targetRotation = helpers.math.lookAt(avatar.Position, targetPosition)
     avatar.Head.Rotation = targetRotation
+end
+
+local hierarchyActions = require("hierarchyactions")
+local changeTint = function(shape, h)
+    hierarchyActions:applyToDescendants(shape, { includeRoot = true }, function(o)
+        if type(o) == "Shape" or type(o) == "MutableShape" then
+            for i = 1, #o.Palette - 1 do
+                local color = o.Palette[i].Color
+                local HSLColor = helpers.colors.RGBToHSL(color)
+                HSLColor.h = h
+                HSLColor.s = 20
+                local newColor = helpers.colors.HSLToRGB(HSLColor.h, HSLColor.s, HSLColor.l)
+
+                o.Palette[i].Color = newColor
+            end
+        end
+    end)
 end
 
 
@@ -211,6 +241,7 @@ spawners = {
             end
         end
 
+        bonus.IsUnlit = true
         bonus.type = bonusType
         bonus.CollisionGroups = COLLISION_GROUP_BONUS
         bonus.CollidesWithGroups = COLLISION_GROUP_PLAYER
@@ -266,20 +297,20 @@ spawners = {
         local t = Text()
         t.Text = "+" .. pointsCount
         t.IsUnlit = true
-        t.Tail = true
+        t.Tail = false
         t.Color = Color.White
         t.FontSize = 8
-        t.BackgroundColor = Color(0, 0, 0, 0)
+        t.BackgroundColor = Color(0, 0, 0, 20)
         t:SetParent(World)
         t.Position = position
-
-        t.Tick = function (self, dt)
+        t.lifetime = 0
+        t.Tick = function (_, dt)
+            t.lifetime = t.lifetime + dt
             t.Position.Y = t.Position.Y + (22 * dt)
+            if t.lifetime >= 0.65 then
+                t:RemoveFromParent()
+            end
         end
-
-        Timer(0.5, false, function()
-            t:RemoveFromParent()
-        end)
     end,
     spawnCoins = function(room)
         local position = spawners.randomPositionInRoom(40, 0)
@@ -352,7 +383,7 @@ spawners = {
         npc.setDirectionLeft(math.random(1, 2) == 1)
         npc.kill = function(reason)
             npc.Physics = PhysicsMode.Disabled
-            dustifyModule.dustify(npc, { direction = npc.Motion, velocity = Number3(50, 100, 5), bounciness = 0.25, collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
+            dustifyModule.dustify(npc, { direction = npc.Motion, velocity = Number3(50, 100, 5), bounciness = 0.15, collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
             npc.IsHidden = true
             if reason == GAME_DEAD_REASON.TRAMPLED then
                 sfx("eating_1",
@@ -607,7 +638,7 @@ levelManager = {
         local newConfig
 
         repeat
-            newConfig = math.random(1, 8)
+            newConfig = math.random(1, 9)
             attempts = attempts + 1
         until (not table.contains(levelManager._lastRoomConfigs, newConfig) or attempts >= maxAttempts)
         table.insert(levelManager._lastRoomConfigs, 1, newConfig)
@@ -634,7 +665,7 @@ levelManager = {
 
         local backgroundColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.backgroundLightness)
         local wallColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.wallLightness)
-        local bottomColor = helpers.colors.HSLToRGB(hue, saturation, math.random(76, 80))
+        local bottomColor = helpers.colors.HSLToRGB(hue, saturation, math.random(70, 75))
 
         local groundOnly = floorNumber == -1
         if groundOnly then
@@ -716,7 +747,7 @@ levelManager = {
             roomStructure:createHoleFromBlockCoordinates(Face.Right, Number3(0, 6, 1), Number3( 2, 4, 1))
         end
 
-        levelManager.addProps(roomProps, floorNumber)
+        levelManager.addProps(roomProps, floorNumber, hue)
 
         room.structure = roomStructure
         room.propsContainer = roomProps
@@ -753,7 +784,7 @@ levelManager = {
         else
             local destroySound = prop.destroySound or "gun_shot_2"
             sfx(destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.55 })
-            dustifyModule.dustify(prop, { collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
+            dustifyModule.dustify(prop, { collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL, bounciness = 0.15 })
             prop:RemoveFromParent()
             playerManager.calmDownAnger(3)
             gameManager.increaseStat("destroyedProps", 1, prop)
@@ -766,16 +797,19 @@ levelManager = {
         if collide then
             prop.CollisionGroups = COLLISION_GROUP_PROPS
             prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
+            prop.lifeTime = 0
+            prop.soundDamage = soundDamage
+            prop.destroySound = destroySound
         else
-            prop.CollisionGroups = COLLISION_GROUP_NONE
-            prop.CollidesWithGroups = COLLISION_GROUP_NONE
-            prop.Physics = PhysicsMode.Disabled
+            hierarchyActions:applyToDescendants(prop, { includeRoot = true }, function(o)
+                o.CollisionGroups = COLLISION_GROUP_NONE
+                o.CollidesWithGroups = COLLISION_GROUP_NONE
+                o.Physics = PhysicsMode.Disabled
+            end)
         end
-        prop.soundDamage = soundDamage
-        prop.destroySound = destroySound
     end,
-    addProps = function (floor, floorNumber)
-        local randomConfig = floorNumber <= -2 and levelManager.getNewRandomConfig() or math.random(1, 8)
+    addProps = function (floor, floorNumber, hue)
+        local randomConfig = floorNumber <= -2 and levelManager.getNewRandomConfig() or math.random(1, 9)
 
         if floorNumber == -1 then
             local prop = Shape(Items.uevoxel.antena02)
@@ -791,6 +825,52 @@ levelManager = {
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, prop.Height * 0.5 - 8, -15)
+
+            -- Instructions
+            local instructionsContainer = Object()
+            instructionsContainer:SetParent(floor)
+            instructionsContainer.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 - 3, 50, 0)
+
+            local actionName = "Click"
+            if Client.IsMobile then
+                actionName = "Tap"
+            end
+
+            local t = Text()
+            t:SetParent(instructionsContainer)
+            t.Anchor = { 0, 0.5 }
+            t.Text = "How to play"
+            t.IsUnlit = true
+            t.Tail = false
+            t.Color = Color.White
+            t.BackgroundColor = Color.Black
+            t.FontSize = 8
+
+            t = Text()
+            t:SetParent(instructionsContainer)
+            t.LocalPosition = Number3(0, -11, 0)
+            t.Anchor = { 0, 0.5 }
+            t.Text = actionName .. " to jump"
+            t.IsUnlit = true
+            t.Tail = false
+            t.Color = Color.White
+            t.BackgroundColor = Color(0, 0, 0, 180)
+            t.FontSize = 5
+            gameConfig.howTo.jumpText = t
+            gameConfig.howTo.jumpState = false
+
+            t = Text()
+            t:SetParent(instructionsContainer)
+            t.LocalPosition = Number3(0, -20, 0)
+            t.Anchor = { 0, 0.5 }
+            t.Text = actionName .. " in the air to dig"
+            t.IsUnlit = true
+            t.Tail = false
+            t.Color = Color.White
+            t.BackgroundColor = Color(0, 0, 0, 180)
+            t.FontSize = 5
+            gameConfig.howTo.digText = t
+            gameConfig.howTo.digState = false
 
             return
         end
@@ -817,16 +897,17 @@ levelManager = {
         if randomConfig == 1 then
             local prop = Shape(Items.claire.desk7)
             levelManager.prepareProp(floor, prop)
-            prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 90
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.sofa2)
             levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(1.2, 1.2, 1.2)
             prop.LocalRotation.Y = math.pi
             prop.LocalPosition = Number3(0, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 11)
+            changeTint(prop, hue)
 
             prop = Shape(Items.piaa.book_shelf)
             levelManager.prepareProp(floor, prop)
@@ -835,6 +916,7 @@ levelManager = {
             prop.Pivot = Number3(0, prop.Height * 0.5, 0)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.office_cabinet)
             levelManager.prepareProp(floor, prop, "hitmarker_2", "gun_shot_2", true)
@@ -850,27 +932,27 @@ levelManager = {
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 20, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.claire.painting9)
+            levelManager.prepareProp(floor, prop)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(0, prop.Height * 0.5 + 22, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
         elseif randomConfig == 2 then
             local prop = Shape(Items.claire.desk7)
             levelManager.prepareProp(floor, prop)
-            prop.Physics = PhysicsMode.Disabled
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = -90
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.sofa2)
             levelManager.prepareProp(floor, prop, nil, nil, true)
             prop.life = 2
             prop.LocalScale = Number3(1.2, 1.2, 1.2)
             prop.LocalRotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
-
-            prop = Shape(Items.claire.office_door)
-            levelManager.prepareProp(floor, prop)
-            prop.LocalRotation.Y = 0
-            prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
-            prop.Scale = Number3(1.7, 1.7, 1.7)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 25)
 
             prop = Shape(Items.uevoxel.vending_machine01)
             levelManager.prepareProp(floor, prop)
@@ -878,24 +960,28 @@ levelManager = {
             prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 45, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
             prop.Scale = Number3(0.7, 0.7, 0.7)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting13)
             levelManager.prepareProp(floor, prop)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 55, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
         elseif randomConfig == 3 then
             local prop = Shape(Items.claire.desk7)
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-38, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.desk7)
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = 0
             prop.LocalPosition = Number3(-17, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.sofa2)
             levelManager.prepareProp(floor, prop, nil, nil, true)
@@ -909,43 +995,49 @@ levelManager = {
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = math.pi / 2
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 9,  prop.Height * 0.5 - 12, 8)
+            changeTint(prop, hue)
 
-            prop = Shape(Items.claire.office_door)
-            levelManager.prepareProp(floor, prop)
-            prop.LocalRotation.Y = 0
-            prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 30, 0, ROOM_DIMENSIONS.Z * 0.5 - 5)
-            prop.Scale = Number3(1.7, 1.7, 1.7)
+            prop = Shape(Items.uevoxel.bed)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 3
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalRotation.Y = math.pi
+            prop.LocalPosition = Number3(15, prop.Height * 0.5 - 1, ROOM_DIMENSIONS.Z * 0.5 - 29)
         elseif randomConfig == 4 then
             local prop = Shape(Items.kooow.cardboard_box_long)
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.5
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 25, 0, 5)
+            changeTint(prop, hue)
 
             prop = prop:Copy()
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.95
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 13, 0, -1)
+            changeTint(prop, hue)
 
             prop = Shape(Items.kooow.cardboard_box_small)
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.5
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 21, 7, 5)
+            changeTint(prop, hue)
         elseif randomConfig == 5 then
             local prop = Shape(Items.kooow.cardboard_box_long)
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -2
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 35, 0, 4)
+            changeTint(prop, hue)
 
             prop = prop:Copy()
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.4, 0.4, 0.4)
             prop.LocalRotation.Y = -6
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 23, 0, 6)
+            changeTint(prop, hue)
 
             local position = spawners.randomPositionInRoom(5, 0)
             for i = 1, 4 do
@@ -966,6 +1058,7 @@ levelManager = {
                         playerManager.takeDamage(1, gameConfig.player.bumpVelocity)
                     end
                 end
+                prop.Tick = function(_, _) end
                 prop.LocalPosition.Z = prop.LocalPosition.Z + (i * 5) - 15
             end
         elseif randomConfig == 6 then
@@ -973,6 +1066,7 @@ levelManager = {
             levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.7, 0.7, 0.7)
             prop.LocalPosition = Number3(-19, 13, 11)
+            changeTint(prop, hue)
 
             prop = Shape(Items.kooow.table_round_gwcloth)
             levelManager.prepareProp(floor, prop, nil, nil, true)
@@ -990,6 +1084,7 @@ levelManager = {
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 + 1, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
 
             local character = gameConfig.avatars.boumety
             if not character:GetParent() then
@@ -1020,23 +1115,27 @@ levelManager = {
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.Rotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 35, 0, 1)
+            changeTint(prop, hue)
 
             prop = Shape(Items.chocomatte.treadmill)
             levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.Rotation.Y = 0
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, 0, 1)
+            changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting6)
             levelManager.prepareProp(floor, prop)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
 
             prop = Shape(Items.voxels.punching_bag)
             levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, 3)
+            changeTint(prop, hue)
 
             local character = gameConfig.avatars.nanskip
             if not character:GetParent() then
@@ -1053,6 +1152,7 @@ levelManager = {
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, -20)
             prop.LocalRotation.Y = 0.6
+            changeTint(prop, hue)
 
             local light = Light()
             light:SetParent(prop)
@@ -1081,17 +1181,20 @@ levelManager = {
             prop.Rotation.Y = math.pi
             prop.LocalScale = Number3(0.6, 0.6, 0.6)
             prop.LocalPosition = Number3(0, ROOM_DIMENSIONS.Y * 0.5 - prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 8)
+            changeTint(prop, hue)
 
             prop = Shape(Items.pratamacam.chair01)
             levelManager.prepareProp(floor, prop)
             prop.LocalRotation.Y = -1.9
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(18, 5, 5)
+            changeTint(prop, hue)
 
             prop = Shape(Items.pratamacam.snake_plant)
             levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 15, 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
+            changeTint(prop, hue)
 
             local character = gameConfig.avatars.pratamacam
             if not character:GetParent() then
@@ -1101,6 +1204,31 @@ levelManager = {
                 character.LocalPosition = Number3(0, 0, 10)
                 character.Tick = followPlayerPosition
             end
+        elseif randomConfig == 9 then
+            local prop = Shape(Items.kooow.bathtub_with_yl_duck)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.life = 3
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 25, prop.Height * 0.5 - 8, ROOM_DIMENSIONS.Z * 0.5 - 10)
+
+            prop = Shape(Items.voxels.sidetable_4)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 43, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 16)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.wrden.bathroom_cabinet)
+            levelManager.prepareProp(floor, prop)
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalRotation.Y = -math.pi / 2
+            prop.LocalPosition = Number3(15, prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 16)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.voxels.clothes_rack)
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, ROOM_DIMENSIONS.Z * 0.5 - 16)
+            changeTint(prop, hue)
         end
     end,
     addFloorBonuses = function(floor)
@@ -1429,7 +1557,7 @@ uiManager = {
         if uiManager._HUDScreen then
             if uiManager._hungerBar then
                 local hungerRatio = math.min(1, math.max(0, 1 - (playerManager._hunger / playerManager._hungerMax)))
-                local maxHeight = gameConfig.theme.ui.hungerBar.height - 8
+                local maxHeight = gameConfig.theme.ui.hungerBar.height - gameConfig.theme.ui.hungerBar.padding
                 uiManager._hungerBar.Height = maxHeight * hungerRatio
 
                 local startHue = gameConfig.theme.ui.hungerBar.colorHSL[1]
@@ -1459,19 +1587,23 @@ uiManager = {
         local hudBackgroundColor = gameConfig.theme.ui.backgroundColor:Copy()
         hudBackgroundColor.A = 150
 
+        local hungerBarBackground
         local frame = ui:createFrame(Color(0, 0, 0, 0))
         uiManager._HUDScreen = frame
-        frame.Width = 95
+        frame.Width = 25
         frame.Height = 50
-        frame.Position = Number2(Screen.Width - frame.Width - uiPadding, uiPadding)
+        frame.Position = Number2(Screen.Width - frame.Width, uiPadding)
+        frame.parentDidResize = function(_)
+            frame.Position = Number2(Screen.Width - frame.Width, Screen.Height * 0.5 - frame.Height * 0.5)
+        end
 
         -- Hunger bar
-        local barPadding = 8
-        local hungerBarBackground = ui:createFrame(hudBackgroundColor)
+        local barPadding = gameConfig.theme.ui.hungerBar.padding
+        hungerBarBackground = ui:createFrame(hudBackgroundColor)
         hungerBarBackground:setParent(frame)
         hungerBarBackground.Width = gameConfig.theme.ui.hungerBar.width
         hungerBarBackground.Height = gameConfig.theme.ui.hungerBar.height
-        hungerBarBackground.LocalPosition = Number3(frame.Width - hungerBarBackground.Width * 0.5 - uiPadding, Screen.Height * 0.5 - hungerBarBackground.Height * 0.5, 0)
+        hungerBarBackground.LocalPosition = Number2(0, -hungerBarBackground.Height * 0.5)
         uiManager._hungerBarBackground = hungerBarBackground
 
         local hungerBar = ui:createFrame(gameConfig.theme.ui.hungerBar.highColor)
@@ -1480,12 +1612,16 @@ uiManager = {
         hungerBar.Height = gameConfig.theme.ui.hungerBar.height - barPadding
         hungerBar.LocalPosition = Number3(barPadding * 0.5, barPadding * 0.5, 0)
         uiManager._hungerBar = hungerBar
+
+        frame:parentDidResize()
     end,
     showScoreScreen = function()
         if uiManager._gameOverScreen then
             uiManager._gameOverScreen:remove()
             uiManager._gameOverScreen = nil
         end
+
+        uiManager._hungerBarBackground.IsHidden = true
 
         local uiPadding = uitheme.current.padding
         local textPadding = 10
@@ -1496,13 +1632,32 @@ uiManager = {
         frame.Width = 400
         frame.Height = 500
         frame.parentDidResize = function()
-            frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 -
-            Screen.SafeArea.Top }
+            if Client.IsMobile then
+                frame.Width = Screen.Width - uiPadding * 4
+                frame.LocalPosition = Number2(uiPadding * 2, Screen.Height / 2 - frame.Height / 2 -
+                Screen.SafeArea.Top)
+            else
+                frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 -
+                Screen.SafeArea.Top }
+            end
         end
         frame:parentDidResize()
 
         -- Score details
         local floorReached = math.abs(playerManager._lastFloorReached) - 1
+
+        local totalScore = (
+            gameManager._stats.coins +
+            gameManager._stats.food * gameConfig.points.food +
+            gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies +
+            gameManager._stats.destroyedProps * gameConfig.points.destroyedProps
+        ) * floorReached
+
+        -- Save score to leaderboard
+        leaderboard:set({
+            score = totalScore,
+            value = { totalScore = totalScore, floorReached = floorReached },
+        })
 
         -- Title
         local titleText = ui:createText("Game Over!", Color.White, "big")
@@ -1514,7 +1669,7 @@ uiManager = {
         local detailsContainer = ui:createFrame(Color(51, 178, 73, 60))
         detailsContainer:setParent(frame)
         detailsContainer.Width = frame.Width - uiPadding * 2
-        detailsContainer.Height = 165
+        detailsContainer.Height = 137
         detailsContainer.LocalPosition = { uiPadding, titleText.LocalPosition.Y - detailsContainer.Height - uiPadding - 20 }
 
         -- Stats details
@@ -1534,10 +1689,9 @@ uiManager = {
         end
 
         -- Ajout des lignes de statistiques
-        createStatLine("Ground destroyed", gameManager._stats.destroyedGround, textPadding * 13, 0.1)
-        createStatLine("Props destroyed", gameManager._stats.destroyedProps, textPadding * 10, 0.4)
-        createStatLine("Enemies defeated", gameManager._stats.killedEnnemies, textPadding * 7, 0.7)
-        createStatLine("Food eaten", gameManager._stats.food, textPadding * 4, 1.0)
+        createStatLine("Props destroyed", gameManager._stats.destroyedProps * gameConfig.points.destroyedProps, textPadding * 10, 0.4)
+        createStatLine("Enemies defeated", gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies, textPadding * 7, 0.7)
+        createStatLine("Food eaten", gameManager._stats.food * gameConfig.points.food, textPadding * 4, 1.0)
         createStatLine("Coins collected", gameManager._stats.coins, textPadding, 1.3)
 
         -- Création du multiplicateur (Floor reached) sous le container de stats
@@ -1561,14 +1715,6 @@ uiManager = {
             sfx("buttonpositive_3", { Pitch = 1.0 , Volume = 0.65 })
         end)
 
-        local totalScore = (
-            gameManager._stats.coins +
-            gameManager._stats.food * gameConfig.points.food +
-            gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies +
-            gameManager._stats.destroyedProps * gameConfig.points.destroyedProps +
-            gameManager._stats.destroyedGround * gameConfig.points.destroyedGround
-        ) * floorReached
-
         -- Total score
         local nextButton
         Timer(2.1, false, function()
@@ -1578,7 +1724,7 @@ uiManager = {
             totalScoreContainer.Height = 50
             totalScoreContainer.LocalPosition = { uiPadding, floorContainer.LocalPosition.Y - totalScoreContainer.Height - uiPadding }
 
-            local scoreTitle = ui:createText("Total Score:", Color.White, "small")
+            local scoreTitle = ui:createText("Total Score", Color.White, "small")
             scoreTitle:setParent(totalScoreContainer)
             scoreTitle.object.Anchor = { 0, 0.5 }
             scoreTitle.LocalPosition = { uiPadding, totalScoreContainer.Height * 0.5 }
@@ -1622,14 +1768,20 @@ uiManager = {
 
         local uiPadding = uitheme.current.padding
 
-        local frame = ui:createFrame(gameConfig.theme.ui.backgroundColor)
+        local frame = ui:createFrame(Color(0, 0, 0, 0))
         uiManager._gameOverScreen = frame
 
         frame.Width = 400
-        frame.Height = 450
+        frame.Height = 500
         frame.parentDidResize = function()
-            frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 -
-            Screen.SafeArea.Top }
+            if Client.IsMobile then
+                frame.Width = Screen.Width - uiPadding * 4
+                frame.LocalPosition = Number2(uiPadding * 2, Screen.Height / 2 - frame.Height / 2 -
+                Screen.SafeArea.Top)
+            else
+                frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 -
+                Screen.SafeArea.Top }
+            end
         end
         frame:parentDidResize()
 
@@ -1647,26 +1799,25 @@ uiManager = {
             sfx("button_5", { Pitch = 1.0 , Volume = 1 })
             uiManager.hideAllScreens()
             gameManager.startGame()
+            uiManager._hungerBarBackground.IsHidden = false
         end
 
         local niceLeaderboard = requireNiceleaderboard()({
             leaderboardName = "no-elevator",
-            -- extraLine = function(score)
-            -- 	return "max floor: " .. score.value.floorReached
-            -- end,
         })
-
-        local leaderboard = Leaderboard("no-elevator")
-        leaderboard:set({
-            score = totalScore,
-            value = { totalScore = totalScore, floorReached = floorReached },
-        })
-
         niceLeaderboard:setParent(frame)
         niceLeaderboard.Width = frame.Width - uiPadding * 2
-        niceLeaderboard.Height = 390
+        niceLeaderboard.Height = frame.Height - newGameButton.Height - uiPadding * 3
         niceLeaderboard.LocalPosition = { frame.Width / 2 - niceLeaderboard.Width / 2, uiPadding + newGameButton.Height + uiPadding }
         niceLeaderboard:show()
+    end,
+    markHowToAsDone = function(howToStepText)
+        howToStepText.BackgroundColor = Color(0, 128, 0, 180)
+        ease:inOutQuad(howToStepText, 0.15, {
+            onDone = function()
+                ease:inOutQuad(howToStepText, 0.15).Scale = Number3(1, 1, 1)
+            end,
+        }).Scale = Number3(1.15, 1.15, 1.0)
     end,
 }
 
@@ -1689,6 +1840,7 @@ Client.OnStart = function()
     levelManager.init()
     playerManager.init()
     gameManager.init()
+    leaderboard = Leaderboard("no-elevator")
 
     gameManager.startGame()
 end
@@ -1706,8 +1858,23 @@ Pointer.Down = function()
 
     if Player.IsOnGround then
         Player.Velocity.Y = playerManager._jumpHeight
+
+        if not gameConfig.howTo.jumpState and gameConfig.howTo.jumpText ~= nil then
+            uiManager.markHowToAsDone(gameConfig.howTo.jumpText)
+            gameConfig.howTo.jumpState = true
+        end
     elseif not playerManager._digging then
         playerManager.startDigging(1)
+
+        if not gameConfig.howTo.digState and gameConfig.howTo.digText ~= nil then
+            if not gameConfig.howTo.jumpState then
+                uiManager.markHowToAsDone(gameConfig.howTo.jumpText)
+                gameConfig.howTo.jumpState = true
+            end
+
+            uiManager.markHowToAsDone(gameConfig.howTo.digText)
+            gameConfig.howTo.digState = true
+        end
     end
 end
 
@@ -1781,10 +1948,15 @@ function requireNiceleaderboard()
                 if parent == nil then
                     return
                 end
+                
+                -- Définir une hauteur fixe pour toutes les cellules
+                local CELL_HEIGHT = 80 -- Ajuster cette valeur selon vos besoins
                 self.Width = parent.Width - 4
+                self.Height = CELL_HEIGHT
 
                 local availableWidth = self.Width - theme.padding * 3 - AVATAR_SIZE
 
+                -- Ajuster l'échelle des textes
                 self.username.object.Scale = 1
                 local scale = math.min(1, availableWidth / self.username.Width)
                 self.username.object.Scale = scale
@@ -1793,32 +1965,44 @@ function requireNiceleaderboard()
                 scale = math.min(1, availableWidth / self.score.Width)
                 self.score.object.Scale = scale
 
-                self.Height = self.score.Height + self.username.Height + theme.padding * 2
-
+                -- Calculer l'espace vertical disponible
+                local totalTextHeight = self.username.Height + self.score.Height
                 if self.extraLine:isVisible() then
-                    self.Height = self.Height + self.extraLine.Height
                     self.extraLine.object.Scale = 1
                     scale = math.min(1, availableWidth / self.extraLine.Width)
                     self.extraLine.object.Scale = scale
+                    totalTextHeight = totalTextHeight + self.extraLine.Height
                 end
+
+                -- Positionner les éléments verticalement de manière centrée
+                local startY = (self.Height + totalTextHeight) * 0.5 - theme.padding
 
                 self.username.pos = {
                     theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.username.Width * 0.5,
-                    self.Height - self.username.Height - theme.padding,
+                    startY - self.username.Height,
                 }
+                
                 self.score.pos = {
                     theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.score.Width * 0.5,
                     self.username.pos.Y - self.score.Height,
                 }
-                self.extraLine.pos = {
-                    theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.extraLine.Width * 0.5,
-                    self.score.pos.Y - self.extraLine.Height,
-                }
 
+                if self.extraLine:isVisible() then
+                    self.extraLine.pos = {
+                        theme.padding * 2 + AVATAR_SIZE + availableWidth * 0.5 - self.extraLine.Width * 0.5,
+                        self.score.pos.Y - self.extraLine.Height,
+                    }
+                end
+
+                -- Centrer l'avatar verticalement
                 self.avatar.pos = {
                     theme.padding,
-                    self.Height * 0.5 - AVATAR_SIZE * 0.5 + theme.paddingTiny,
+                    self.Height * 0.5 - AVATAR_SIZE * 0.5,
                 }
+
+                -- Ajuster la taille de l'avatar pour qu'il rentre dans la cellule
+                self.avatar.Width = math.min(AVATAR_SIZE, self.Height - theme.padding * 2)
+                self.avatar.Height = self.avatar.Width
 
                 if self.userID == Player.UserID then
                     cellSelector:setParent(self)
@@ -1890,7 +2074,7 @@ function requireNiceleaderboard()
                         local score = friendScores[index]
 
                         cell.userID = score.userID
-                        cell.username.Text = score.user.username
+                        cell.username.Text = score.user.username or "newbie"
                         cell.score.Text = formatNumber(score.score)
                         cell.avatar:load({ usernameOrId = score.userID })
 
@@ -2015,6 +2199,10 @@ function requireNiceleaderboard()
 
             local function refresh()
                 if nbUserInfoToFetch > 0 then
+                    return
+                end
+
+                if not uiManager._gameOverScreen then
                     return
                 end
 
