@@ -81,7 +81,7 @@ local gameConfig = {
     gravity = Number3(0, -850, 0),
     floorInMemoryMax = 8,
     moneyProbability = 0.3,
-    bonusProbability = 0.05,
+    bonusProbability = 0.075,
     foodProbability = 0.01,
     bonusesRotationSpeed = 1.5 * math.pi,
     music = "https://raw.githubusercontent.com/Donorhan/cubzh-oops-no-elevator/main/dancing-with-shadows.mp3",
@@ -120,7 +120,7 @@ local gameConfig = {
         defaultSpeed = 67,
         defaultJumpHeight = 200,
         defaultDigForce = -15000,
-        defaultHungerMax = 10, -- 10 seconds to destroy things
+        defaultAngerMax = 10, -- 10 seconds to destroy things
         foodBonusTimeAdded = 8, -- Time added to the hunger when eating food bonus
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
@@ -221,7 +221,7 @@ spawners = {
             bonus.LocalRotation.X = 15
             callback = function(_)
                 sfx("coin_1", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-                playerManager.startDigging(5)
+                playerManager.startDigging(5, true)
             end
         elseif bonusType == GAME_BONUSES.FOOD then
             bonus = Shape(Items.chocomatte.ramen)
@@ -229,7 +229,7 @@ spawners = {
             bonus.LocalScale = Number3(0.6, 0.6, 0.6)
             callback = function(_)
                 sfx("eating_4", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-                playerManager._hunger = math.max(0, playerManager._hunger - gameConfig.player.foodBonusTimeAdded)
+                playerManager._anger = math.max(0, playerManager._anger - gameConfig.player.foodBonusTimeAdded)
                 gameManager.increaseStat("food", 1, bonus)
                 spawners.spawnPointsText(Player.Position + Number3(0, 25, 0), gameConfig.points.food)
             end
@@ -401,7 +401,7 @@ spawners = {
             gameManager._cameraContainer.shake(10)
         end
     
-        npc.takeDamage = function (damage, reason)
+        npc.takeDamage = function (damage, reason, _collider)
             npc.life = npc.life - damage
             if npc.life <= 0 then
                 npc.kill(reason)
@@ -418,7 +418,7 @@ spawners = {
             elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
                 if normal.Y >= 1.0 then
                     if collider:GetParent():GetParent().id ~= self.spawnFloor then
-                        self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE)
+                        self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE, collider)
                     end
                 end
             end
@@ -776,8 +776,8 @@ levelManager = {
         playerManager.calmDownAnger(0.1)
         gameManager.increaseStat("destroyedGround", 1, nil)
     end,
-    damageProp = function(prop, _)
-        prop.life = prop.life - 1
+    damageProp = function(prop, damageCount)
+        prop.life = prop.life - (damageCount or 1)
         if prop.life > 0 then
             local soundDamage = prop.soundDamage or "punch_1"
             sfx(soundDamage, { Position = prop.Position, Pitch = 0.8 + math.random() * 0.1, Volume = 0.55 })
@@ -1056,7 +1056,7 @@ levelManager = {
                     end
     
                     if collider.CollisionGroups == COLLISION_GROUP_PLAYER then
-                        playerManager.takeDamage(1, gameConfig.player.bumpVelocity)
+                        playerManager.takeDamage(1, gameConfig.player.bumpVelocity, prop)
                     end
                 end
                 prop.Tick = function(_, _) end
@@ -1333,14 +1333,14 @@ levelManager = {
 playerManager = {
     _digging = false,
     _diggingForceAccumulator = 0,
+    _diggingInvincible = false,
     _lastFloorReached = 0,
     _life = 1,
     _jumpHeight = gameConfig.player.defaultJumpHeight,
-    _hasHelmet = false,
-    _hasBackpack = false,
     _speed = gameConfig.player.defaultSpeed,
-    _hunger = 0,
-    _hungerMax = gameConfig.player.defaultHungerMax,
+    _anger = 0,
+    _angerMax = gameConfig.player.defaultAngerMax,
+    _invincible = false,
 
     init = function()
         Player.IsHidden = false
@@ -1405,23 +1405,27 @@ playerManager = {
         Player.IsHidden = false
         playerManager._digging = false
         playerManager._diggingForceAccumulator = 0
+        playerManager._invincible = false
+        playerManager._diggingInvincible = false
         playerManager._lastFloorReached = 0
         playerManager._life = gameConfig.player.defaultLife
-        playerManager._hunger = 0
-        playerManager._hungerMax = gameConfig.player.defaultHungerMax
+        playerManager._anger = 0
+        playerManager._angerMax = gameConfig.player.defaultAngerMax
         gameManager._cameraContainer.zoom(gameConfig.camera.defaultZoom)
         gameConfig.camera.lockTranslationOnY = true
     end,
     calmDownAnger = function(value)
-        playerManager._hunger = math.max(0, playerManager._hunger - value)
+        playerManager._anger = math.max(0, playerManager._anger - value)
     end,
-    startDigging = function(diggingForce)
+    startDigging = function(diggingForce, invincible)
         playerManager._digging = true
         playerManager._diggingForceAccumulator = diggingForce
+        playerManager._diggingInvincible = invincible
     end,
     stopDigging = function()
         playerManager._digging = false
         playerManager._diggingForceAccumulator = 0
+        playerManager._diggingInvincible = false
         if Player.Motion.X == 0 then
             playerManager.reachedFirstFloor()
         end
@@ -1456,9 +1460,10 @@ playerManager = {
                 end
             end
         elseif collider.CollisionGroups == COLLISION_GROUP_ENNEMY then
-            if playerManager._hasHelmet and normal.Y < -0.8 then
-                sfx("sword_impact_1", { Position = Player.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.65 })
-                collider.kill(GAME_DEAD_REASON.FALL_DAMAGE)
+            if playerManager._invincible or playerManager._diggingInvincible then
+                gameManager._cameraContainer.shake(750)
+                levelManager.damageProp(collider, 9999)
+                Client:HapticFeedback()
                 return
             end
 
@@ -1472,12 +1477,19 @@ playerManager = {
                 return
             end
 
-            playerManager.takeDamage(1, Number2(-self.Motion.X * 20, 200))
+            playerManager.takeDamage(1, Number2(-self.Motion.X * 20, 200), collider)
         elseif collider.CollisionGroups == COLLISION_GROUP_PROPS then
             if not playerManager._digging then
                 if math.abs(normal.X) > 0.5 then
                     inverseDirection()
                 end
+                return
+            end
+
+            if playerManager._invincible or playerManager._diggingInvincible then
+                gameManager._cameraContainer.shake(750)
+                levelManager.damageProp(collider, 9999)
+                Client:HapticFeedback()
                 return
             end
 
@@ -1488,8 +1500,15 @@ playerManager = {
             Client:HapticFeedback()
         end
     end,
-    takeDamage = function(damageCount, knockback)
-        playerManager._life = playerManager._life - 1
+    takeDamage = function(damageCount, knockback, collider)
+        if playerManager._invincible or playerManager._diggingInvincible then
+            if collider.takeDamage then
+                collider.takeDamage(9999, GAME_DEAD_REASON.DAMAGE)
+            end
+            return
+        end
+
+        playerManager._life = playerManager._life - damageCount
         gameManager._cameraContainer.shake(damageCount * 50)
         Player.Velocity.X = knockback.X
         Player.Velocity.Y = knockback.Y
@@ -1521,8 +1540,8 @@ playerManager = {
         Player.Position.Z = 0
 
         if playerManager._lastFloorReached < -1 then
-            playerManager._hunger = playerManager._hunger + dt
-            if playerManager._hunger >= playerManager._hungerMax then
+            playerManager._anger = playerManager._anger + dt
+            if playerManager._anger >= playerManager._angerMax then
                 gameManager.endGame(GAME_DEAD_REASON.STARVING)
                 return
             end
@@ -1556,10 +1575,10 @@ uiManager = {
     end,
     update = function(self, _)
         if uiManager._HUDScreen then
-            if uiManager._hungerBar then
-                local hungerRatio = math.min(1, math.max(0, 1 - (playerManager._hunger / playerManager._hungerMax)))
+            if uiManager._angerBar then
+                local hungerRatio = math.min(1, math.max(0, 1 - (playerManager._anger / playerManager._angerMax)))
                 local maxHeight = gameConfig.theme.ui.hungerBar.height - gameConfig.theme.ui.hungerBar.padding
-                uiManager._hungerBar.Height = maxHeight * hungerRatio
+                uiManager._angerBar.Height = maxHeight * hungerRatio
 
                 local startHue = gameConfig.theme.ui.hungerBar.colorHSL[1]
                 local endHue = 0
@@ -1569,7 +1588,7 @@ uiManager = {
                     gameConfig.theme.ui.hungerBar.colorHSL[2],
                     gameConfig.theme.ui.hungerBar.colorHSL[3]
                 )
-                uiManager._hungerBar.Color = color
+                uiManager._angerBar.Color = color
             end
         end
     end,
@@ -1605,14 +1624,14 @@ uiManager = {
         hungerBarBackground.Width = gameConfig.theme.ui.hungerBar.width
         hungerBarBackground.Height = gameConfig.theme.ui.hungerBar.height
         hungerBarBackground.LocalPosition = Number2(0, -hungerBarBackground.Height * 0.5)
-        uiManager._hungerBarBackground = hungerBarBackground
+        uiManager._angerBarBackground = hungerBarBackground
 
         local hungerBar = ui:createFrame(gameConfig.theme.ui.hungerBar.highColor)
         hungerBar:setParent(hungerBarBackground)
         hungerBar.Width = gameConfig.theme.ui.hungerBar.width - barPadding
         hungerBar.Height = gameConfig.theme.ui.hungerBar.height - barPadding
         hungerBar.LocalPosition = Number3(barPadding * 0.5, barPadding * 0.5, 0)
-        uiManager._hungerBar = hungerBar
+        uiManager._angerBar = hungerBar
 
         frame:parentDidResize()
     end,
@@ -1622,7 +1641,7 @@ uiManager = {
             uiManager._gameOverScreen = nil
         end
 
-        uiManager._hungerBarBackground.IsHidden = true
+        uiManager._angerBarBackground.IsHidden = true
 
         local uiPadding = uitheme.current.padding
         local textPadding = 10
@@ -1714,13 +1733,13 @@ uiManager = {
 
             local floorText = ui:createText("Floor reached", Color.White, "small")
             floorText:setParent(floorContainer)
-            floorText.LocalPosition = { textPadding, floorContainer.Height * 0.5 - 13 }
+            floorText.LocalPosition = { textPadding, floorContainer.Height * 0.5 - floorText.Height * 0.5 }
             floorText.Color = darkTextColor
 
             local floorValue = ui:createText("×" ..tostring(floorReached), Color.White, "small")
             floorValue:setParent(floorContainer)
-            floorValue.object.Anchor = { 1, 0.5 }
-            floorValue.LocalPosition = { floorContainer.Width - textPadding, floorContainer.Height * 0.5 }
+            floorValue.object.Anchor = { 1, 0 }
+            floorValue.LocalPosition = { floorContainer.Width - textPadding, floorContainer.Height * 0.5 - floorValue.Height * 0.5 }
             floorValue.Color = darkTextColor
 
             sfx("buttonpositive_3", { Pitch = 1.0 , Volume = 0.65 })
@@ -1810,7 +1829,7 @@ uiManager = {
             sfx("button_5", { Pitch = 1.0 , Volume = 1 })
             uiManager.hideAllScreens()
             gameManager.startGame()
-            uiManager._hungerBarBackground.IsHidden = false
+            uiManager._angerBarBackground.IsHidden = false
         end
 
         local niceLeaderboard = requireNiceleaderboard()({
