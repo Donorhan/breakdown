@@ -658,17 +658,14 @@ levelManager = {
         spawners.coinPool:releaseAll()
         levelManager.spawnFloors(gameConfig.player.viewRange)
     end,
-    generateRoom = function (floorNumber)
+    generateRoom = function (groundOnly, config)
         local room = Object()
 
         local hue = math.random(0, 360)
         local saturation = gameConfig.theme.room.saturation
-
         local backgroundColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.backgroundLightness)
         local wallColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.wallLightness)
         local bottomColor = helpers.colors.HSLToRGB(hue, saturation, math.random(70, 75))
-
-        local groundOnly = floorNumber == -1
         if groundOnly then
             bottomColor = nil
         end
@@ -743,12 +740,13 @@ levelManager = {
         -- windows
         local windowChoice = math.random(1, 10)
         if windowChoice == 1 then
-            roomStructure:createHoleFromBlockCoordinates(Face.Left, Number3(0, 6, 1), Number3( 2, 4, 1))
+            roomStructure:createHoleFromBlockCoordinates(Face.Left, Number3(0, 6, 1), Number3(2, 4, 1))
         elseif windowChoice == 2 then
             roomStructure:createHoleFromBlockCoordinates(Face.Right, Number3(0, 6, 1), Number3( 2, 4, 1))
         end
 
-        levelManager.addProps(roomProps, floorNumber, hue)
+        roomProps.config = config
+        levelManager.addStaticProps(roomProps, hue)
 
         room.structure = roomStructure
         room.propsContainer = roomProps
@@ -809,10 +807,10 @@ levelManager = {
             end)
         end
     end,
-    addProps = function (floor, floorNumber, hue)
-        local randomConfig = floorNumber <= -2 and levelManager.getNewRandomConfig() or math.random(1, 9)
+    addStaticProps = function (floor, hue)
+        local randomConfig = floor.config
 
-        if floorNumber == -1 then
+        if randomConfig == -1 then
             local prop = Shape(Items.uevoxel.antena02)
             levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
@@ -875,25 +873,6 @@ levelManager = {
 
             return
         end
-        if floorNumber == -2 then
-            randomConfig = 1
-
-            local avatarGaetan = gameConfig.avatars.gaetan
-            avatarGaetan:SetParent(floor)
-            avatarGaetan.Physics = PhysicsMode.Dynamic
-            avatarGaetan.Rotation.Y = math.pi - 0.35
-            avatarGaetan.LocalPosition = Number3(-35, 0, 15)
-            avatarGaetan.Scale = Number3(0.5, 0.5, 0.5)
-            avatarGaetan.Tick = followPlayerPosition
-
-            local avatarAdrien = gameConfig.avatars.aduermael
-            avatarAdrien:SetParent(floor)
-            avatarAdrien.Physics = PhysicsMode.Dynamic
-            avatarAdrien.Rotation.Y = math.pi - 0.25
-            avatarAdrien.LocalPosition = Number3(-22, 0, 15)
-            avatarAdrien.Scale = Number3(0.5, 0.5, 0.5)
-            avatarAdrien.Tick = followPlayerPosition
-        end
 
         if randomConfig == 1 then
             local prop = Shape(Items.claire.desk7)
@@ -919,14 +898,6 @@ levelManager = {
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - 10)
             changeTint(prop, hue)
 
-            prop = Shape(Items.claire.office_cabinet)
-            levelManager.prepareProp(floor, prop, "hitmarker_2", "gun_shot_2", true)
-            prop.Scale = Number3(0.6, 0.6, 0.6)
-            prop.LocalRotation.Y = 0
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Width * 0.5 - 4, prop.Height * 0.5 - 5, 0)
-            prop.Physics = PhysicsMode.Static
-            prop.life = 2
-
             prop = Shape(Items.boumety.shelf3)
             levelManager.prepareProp(floor, prop)
             prop.Physics = PhysicsMode.Disabled
@@ -947,13 +918,6 @@ levelManager = {
             prop.LocalRotation.Y = -90
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 20, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
             changeTint(prop, hue)
-
-            prop = Shape(Items.claire.sofa2)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 2
-            prop.LocalScale = Number3(1.2, 1.2, 1.2)
-            prop.LocalRotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 25)
 
             prop = Shape(Items.uevoxel.vending_machine01)
             levelManager.prepareProp(floor, prop)
@@ -984,26 +948,12 @@ levelManager = {
             prop.LocalPosition = Number3(-17, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
             changeTint(prop, hue)
 
-            prop = Shape(Items.claire.sofa2)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 2
-            prop.LocalScale = Number3(1.2, 1.2, 1.2)
-            prop.LocalRotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
-
             prop = Shape(Items.piaa.book_shelf)
             levelManager.prepareProp(floor, prop)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = math.pi / 2
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 9,  prop.Height * 0.5 - 12, 8)
             changeTint(prop, hue)
-
-            prop = Shape(Items.uevoxel.bed)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 3
-            prop.Scale = Number3(0.7, 0.7, 0.7)
-            prop.LocalRotation.Y = math.pi
-            prop.LocalPosition = Number3(15, prop.Height * 0.5 - 1, ROOM_DIMENSIONS.Z * 0.5 - 29)
         elseif randomConfig == 4 then
             local prop = Shape(Items.kooow.cardboard_box_long)
             levelManager.prepareProp(floor, prop)
@@ -1039,29 +989,6 @@ levelManager = {
             prop.LocalRotation.Y = -6
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 23, 0, 6)
             changeTint(prop, hue)
-
-            local position = spawners.randomPositionInRoom(5, 0)
-            for i = 1, 4 do
-                prop = Shape(Items.minadune.spikes)
-                levelManager.prepareProp(floor, prop, nil, nil, true)
-                prop.life = 50
-                prop.damageColor = Color(255, 0, 0)
-                prop.Physics = PhysicsMode.Static
-                prop.Scale = Number3(0.4, 0.5, 1.5)
-                prop.LocalRotation.Y = 0
-                prop.LocalPosition = Number3(position.X, prop.Height * 0.5 - 2, 0)
-                prop.OnCollisionBegin = function(self, collider, normal)
-                    if math.abs(normal.Y) < 0.5 then
-                        return
-                    end
-    
-                    if collider.CollisionGroups == COLLISION_GROUP_PLAYER then
-                        playerManager.takeDamage(1, gameConfig.player.bumpVelocity, prop)
-                    end
-                end
-                prop.Tick = function(_, _) end
-                prop.LocalPosition.Z = prop.LocalPosition.Z + (i * 5) - 15
-            end
         elseif randomConfig == 6 then
             local prop = Shape(Items.claire.kitchen_counter)
             levelManager.prepareProp(floor, prop)
@@ -1069,49 +996,14 @@ levelManager = {
             prop.LocalPosition = Number3(-19, 13, 11)
             changeTint(prop, hue)
 
-            prop = Shape(Items.kooow.table_round_gwcloth)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 2
-            prop.LocalScale = Number3(0.5, 0.7, 0.5)
-            prop.Rotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 40, 0, 0)
-
-            local foodPlate = Shape(Items.chocomatte.diner_food)
-            foodPlate:SetParent(prop)
-            foodPlate.LocalPosition = Number3(35, 15, 15)
-
             prop = Shape(Items.claire.painting15)
             levelManager.prepareProp(floor, prop)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 + 1, ROOM_DIMENSIONS.Z * 0.5 - 10)
             changeTint(prop, hue)
-
-            local character = gameConfig.avatars.boumety
-            if not character:GetParent() then
-                character.Physics = false
-                character:SetParent(floor)
-                character.Scale = Number3(0.5, 0.5, 0.5)
-                character.LocalPosition = Number3(43, 0, 15)
-                character.Rotation.Y = math.pi - 0.25
-                character.Tick = followPlayerPosition
-            end
         elseif randomConfig == 7 then
-            local prop = Shape(Items.uevoxel.gym01)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 2
-            prop.Rotation.Y = math.pi
-            prop.LocalScale = Number3(0.7, 0.7, 0.7)
-            prop.LocalPosition = Number3(-18, 8, 4)
-
-            prop = Shape(Items.uevoxel.gym01)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 2
-            prop.Rotation.Y = math.pi
-            prop.LocalScale = Number3(0.7, 0.7, 0.7)
-            prop.LocalPosition = Number3(9, 8, 4)
-
-            prop = Shape(Items.chocomatte.treadmill)
+            local prop = Shape(Items.chocomatte.treadmill)
             levelManager.prepareProp(floor, prop)
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.Rotation.Y = 0
@@ -1137,16 +1029,6 @@ levelManager = {
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, 3)
             changeTint(prop, hue)
-
-            local character = gameConfig.avatars.nanskip
-            if not character:GetParent() then
-                character.Physics = false
-                character:SetParent(floor)
-                character.Scale = Number3(0.5, 0.5, 0.5)
-                character.LocalPosition = Number3(-38, 0, 10)
-                character.Rotation.Y = math.pi - 0.25
-                character.Tick = followPlayerPosition
-            end
         elseif randomConfig == 8 then
             local prop = Shape(Items.pratamacam.lighting)
             levelManager.prepareProp(floor, prop)
@@ -1170,12 +1052,6 @@ levelManager = {
                 o.Range = 110 + (math.sin(dt) * 0.5 + 0.5) * 100
             end
 
-            prop = Shape(Items.pratamacam.table01)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.life = 3
-            prop.LocalScale = Number3(0.8, 0.8, 0.8)
-            prop.LocalPosition = Number3(0, 3, -5)
-
             prop = Shape(Items.pratamacam.green_screen)
             levelManager.prepareProp(floor, prop)
             prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
@@ -1196,24 +1072,8 @@ levelManager = {
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 15, 5, ROOM_DIMENSIONS.Z * 0.5 - 15)
             changeTint(prop, hue)
-
-            local character = gameConfig.avatars.pratamacam
-            if not character:GetParent() then
-                character.Physics = false
-                character:SetParent(floor)
-                character.Scale = Number3(0.5, 0.5, 0.5)
-                character.LocalPosition = Number3(0, 0, 10)
-                character.Tick = followPlayerPosition
-            end
         elseif randomConfig == 9 then
-            local prop = Shape(Items.kooow.bathtub_with_yl_duck)
-            levelManager.prepareProp(floor, prop, nil, nil, true)
-            prop.LocalRotation.Y = math.pi / 2
-            prop.life = 3
-            prop.Scale = Number3(0.7, 0.7, 0.7)
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 25, prop.Height * 0.5 - 8, ROOM_DIMENSIONS.Z * 0.5 - 10)
-
-            prop = Shape(Items.voxels.sidetable_4)
+            local prop = Shape(Items.voxels.sidetable_4)
             levelManager.prepareProp(floor, prop)
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 43, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 16)
             changeTint(prop, hue)
@@ -1230,6 +1090,138 @@ levelManager = {
             levelManager.prepareProp(floor, prop)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, ROOM_DIMENSIONS.Z * 0.5 - 16)
             changeTint(prop, hue)
+        end
+    end,
+    addDynamicProps = function (floor, metadata)
+        local randomConfig = floor.config
+
+        if randomConfig == 1 then
+            local prop = Shape(Items.claire.office_cabinet)
+            levelManager.prepareProp(floor, prop, "hitmarker_2", "gun_shot_2", true)
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = 0
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Width * 0.5 - 4, prop.Height * 0.5 - 5, 0)
+            prop.Physics = PhysicsMode.Static
+            prop.life = 2
+
+            if metadata.showCubzhFounders then
+                local avatarGaetan = gameConfig.avatars.gaetan
+                avatarGaetan:SetParent(floor)
+                avatarGaetan.Physics = PhysicsMode.Dynamic
+                avatarGaetan.Rotation.Y = math.pi - 0.35
+                avatarGaetan.LocalPosition = Number3(-35, 0, 15)
+                avatarGaetan.Scale = Number3(0.5, 0.5, 0.5)
+                avatarGaetan.Tick = followPlayerPosition
+
+                local avatarAdrien = gameConfig.avatars.aduermael
+                avatarAdrien:SetParent(floor)
+                avatarAdrien.Physics = PhysicsMode.Dynamic
+                avatarAdrien.Rotation.Y = math.pi - 0.25
+                avatarAdrien.LocalPosition = Number3(-22, 0, 15)
+                avatarAdrien.Scale = Number3(0.5, 0.5, 0.5)
+                avatarAdrien.Tick = followPlayerPosition
+            end
+        elseif randomConfig == 2 then
+            local prop = Shape(Items.claire.sofa2)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.LocalScale = Number3(1.2, 1.2, 1.2)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 25)
+        elseif randomConfig == 3 then
+            local prop = Shape(Items.claire.sofa2)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.LocalScale = Number3(1.2, 1.2, 1.2)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
+
+            prop = Shape(Items.uevoxel.bed)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 3
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalRotation.Y = math.pi
+            prop.LocalPosition = Number3(15, prop.Height * 0.5 - 1, ROOM_DIMENSIONS.Z * 0.5 - 29)
+        elseif randomConfig == 4 then
+        elseif randomConfig == 5 then
+            local position = spawners.randomPositionInRoom(5, 0)
+            for i = 1, 4 do
+                local prop = Shape(Items.minadune.spikes)
+                levelManager.prepareProp(floor, prop, nil, nil, true)
+                prop.life = 50
+                prop.damageColor = Color(255, 0, 0)
+                prop.Physics = PhysicsMode.Static
+                prop.Scale = Number3(0.4, 0.5, 1.5)
+                prop.LocalRotation.Y = 0
+                prop.LocalPosition = Number3(position.X, prop.Height * 0.5 - 2, 0)
+                prop.OnCollisionBegin = function(self, collider, normal)
+                    if math.abs(normal.Y) < 0.5 then
+                        return
+                    end
+    
+                    if collider.CollisionGroups == COLLISION_GROUP_PLAYER then
+                        playerManager.takeDamage(1, gameConfig.player.bumpVelocity, prop)
+                    end
+                end
+                prop.Tick = function(_, _) end
+                prop.LocalPosition.Z = prop.LocalPosition.Z + (i * 5) - 15
+            end
+        elseif randomConfig == 6 then
+            local character = gameConfig.avatars.boumety
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(floor)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(43, 0, 15)
+                character.Rotation.Y = math.pi - 0.25
+                character.Tick = followPlayerPosition
+            end
+        elseif randomConfig == 7 then
+            local prop = Shape(Items.uevoxel.gym01)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.Rotation.Y = math.pi
+            prop.LocalScale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(-18, 8, 4)
+
+            prop = Shape(Items.uevoxel.gym01)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 2
+            prop.Rotation.Y = math.pi
+            prop.LocalScale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(9, 8, 4)
+
+            local character = gameConfig.avatars.nanskip
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(floor)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(-38, 0, 10)
+                character.Rotation.Y = math.pi - 0.25
+                character.Tick = followPlayerPosition
+            end
+        elseif randomConfig == 8 then
+            local prop = Shape(Items.pratamacam.table01)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.life = 3
+            prop.LocalScale = Number3(0.8, 0.8, 0.8)
+            prop.LocalPosition = Number3(0, 3, -5)
+
+            local character = gameConfig.avatars.pratamacam
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(floor)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(0, 0, 10)
+                character.Tick = followPlayerPosition
+            end
+        elseif randomConfig == 9 then
+            local prop = Shape(Items.kooow.bathtub_with_yl_duck)
+            levelManager.prepareProp(floor, prop, nil, nil, true)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.life = 3
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 25, prop.Height * 0.5 - 8, ROOM_DIMENSIONS.Z * 0.5 - 10)
         end
     end,
     addFloorBonuses = function(floor)
@@ -1263,7 +1255,18 @@ levelManager = {
         local startFloor = levelManager._lastFloorSpawned - 1
         for floorLevel = 0, floorCount - 1 do
             local currentFloor = startFloor - floorLevel
-            local floor = levelManager.generateRoom(currentFloor)
+            local groundOnly = currentFloor == -1
+            local randomConfig = levelManager.getNewRandomConfig() or math.random(1, 9)
+            if currentFloor == -1 then
+                randomConfig = -1
+            elseif currentFloor == -2 then
+                randomConfig = 1
+            end
+
+            local floor = levelManager.generateRoom(groundOnly, randomConfig)
+            levelManager.addDynamicProps(floor.propsContainer, {
+                showCubzhFounders = currentFloor == -2,
+            })
             floor:SetParent(World)
             floor.bonuses = {}
 
