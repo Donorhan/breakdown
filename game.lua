@@ -86,6 +86,7 @@ local gameConfig = {
     bonusesRotationSpeed = 1.5 * math.pi,
     music = "https://raw.githubusercontent.com/Donorhan/cubzh-oops-no-elevator/main/dancing-with-shadows.mp3",
     musicVolume = 0.5,
+    leaderboardName = "no-elevator",
     camera = {
         followSpeed = 0.05,
         defaultZoom = -175,
@@ -1688,13 +1689,11 @@ uiManager = {
             end)
         end
 
-        -- Ajout des lignes de statistiques
         createStatLine("Props destroyed", gameManager._stats.destroyedProps * gameConfig.points.destroyedProps, textPadding * 10, 0.4)
         createStatLine("Enemies defeated", gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies, textPadding * 7, 0.7)
         createStatLine("Food eaten", gameManager._stats.food * gameConfig.points.food, textPadding * 4, 1.0)
         createStatLine("Coins collected", gameManager._stats.coins, textPadding, 1.3)
 
-        -- Création du multiplicateur (Floor reached) sous le container de stats
         local floorContainer
         Timer(1.6, false, function()
             floorContainer = ui:createFrame(Color(255, 189, 3, 60))
@@ -1803,7 +1802,7 @@ uiManager = {
         end
 
         local niceLeaderboard = requireNiceleaderboard()({
-            leaderboardName = "no-elevator",
+            leaderboardName = gameConfig.leaderboardName,
         })
         niceLeaderboard:setParent(frame)
         niceLeaderboard.Width = frame.Width - uiPadding * 2
@@ -1840,7 +1839,7 @@ Client.OnStart = function()
     levelManager.init()
     playerManager.init()
     gameManager.init()
-    leaderboard = Leaderboard("no-elevator")
+    leaderboard = Leaderboard(gameConfig.leaderboardName)
 
     gameManager.startGame()
 end
