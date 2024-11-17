@@ -9,10 +9,10 @@ Modules = {
     uitheme = "uitheme",
     ui = "uikit",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:d9bfc5c",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:d9bfc5c",
-    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:d9bfc5c",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:d9bfc5c",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:55d5e98",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:55d5e98",
+    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:55d5e98",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:55d5e98",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -41,6 +41,7 @@ Config = {
         "claire.painting15",
         "claire.painting6",
         "claire.painting9",
+        "claire.painting12",
         "uevoxel.gym01",
         "chocomatte.treadmill",
         "uevoxel.couch",
@@ -53,6 +54,10 @@ Config = {
         "voxels.punching_bag",
         "uevoxel.vending_machine01",
         "claire.painting13",
+        "voxels.drafting_table",
+        "voxels.easel",
+        "voxels.globe",
+        "voxels.open_upright_piano",
     },
 }
 
@@ -81,7 +86,7 @@ local gameConfig = {
     gravity = Number3(0, -850, 0),
     floorInMemoryMax = 8,
     moneyProbability = 0.3,
-    bonusProbability = 0.075,
+    bonusProbability = 0.035,
     foodProbability = 0.01,
     bonusesRotationSpeed = 1.5 * math.pi,
     music = "https://raw.githubusercontent.com/Donorhan/cubzh-oops-no-elevator/main/dancing-with-shadows.mp3",
@@ -112,16 +117,18 @@ local gameConfig = {
                 padding = 4,
             }
         },
+        roomThemeCount = 10,
         roomOffsetZ = ROOM_DIMENSIONS.Z * 0.5,
         skybox = "https://i.ibb.co/hgRhk0t/Standard-Cube-Map.png",
     },
     player = {
         defaultLife = 1,
-        defaultSpeed = 67,
+        defaultSpeed = 75,
         defaultJumpHeight = 200,
         defaultDigForce = -15000,
         defaultAngerMax = 10, -- 10 seconds to destroy things
-        foodBonusTimeAdded = 8, -- Time added to the hunger when eating food bonus
+        destroyGroundAngerReductionAmount = 0.175, -- Anger reduction amount when destroying ground
+        foodBonusTimeAdded = 8, -- Time added to the anger when eating food bonus
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
         bumpVelocity = Number2(0, 170), -- Bump velocity when player jump on something
@@ -144,6 +151,8 @@ local gameConfig = {
         nanskip = "",
         boumety = "",
         pratamacam = "",
+        voxels = "",
+        uevoxel = "",
     },
     howTo = {
         jumpState = false,
@@ -182,6 +191,17 @@ local changeTint = function(shape, h)
             end
         end
     end)
+end
+
+local inverseDirection = function (obj, direction, speed)
+    local newDirection = direction or -obj.Motion.X
+    if newDirection < 0 then
+        obj.Motion:Set(-speed, 0, 0)
+        ease:linear(obj.Rotation, 0.2).Y = math.rad(-90 + 360)
+    else
+        obj.Motion:Set(speed, 0, 0)
+        ease:linear(obj.Rotation, 0.2).Y = math.rad(90)
+    end
 end
 
 
@@ -235,6 +255,7 @@ spawners = {
             end
         elseif bonusType == GAME_BONUSES.COIN then
             bonus = Shape(Items.vico.coin)
+            bonus.LocalScale = Number3(0.85, 0.85, 0.85)
             callback = function(coin)
                 sfx("coin_1", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
                 gameManager.increaseStat("coins", 1, bonus)
@@ -316,8 +337,8 @@ spawners = {
     spawnCoins = function(room)
         local position = spawners.randomPositionInRoom(40, 0)
         local startX = position.X
-        local startY = 40
-        local spacing = 8
+        local startY = 32
+        local spacing = 7
 
         local type = math.random(1, 2)
         if type == 1 then
@@ -332,7 +353,6 @@ spawners = {
                     local coin = spawners.coinPool:acquire()
                     coin:SetParent(room)
                     coin.LocalPosition = Number3(x, y, 0)
-                    coin.LocalRotation.Y = 0
                 end
             end
         elseif type == 2 then
@@ -350,7 +370,7 @@ spawners = {
             end
         end
     end,
-    spawnEnnemy = function(room, position, ennemyType)
+    spawnEnnemy = function(room, position, _ennemyType)
         local npc = MutableShape()
         npc:AddBlock(Color(0, 0, 0, 0), 0, 0, 0)
         npc.Pivot = Number3(0.5, 0, 0.5)
@@ -369,17 +389,8 @@ spawners = {
             model.Animations.Walk:Play()
         end)
 
-        npc.setDirectionLeft = function(value)
-            if value then
-                npc.Motion:Set(-gameConfig.ennemies.police.speed, 0, 0)
-                ease:linear(npc.Rotation, 0.2).Y = math.rad(-90 + 360)
-            else
-                npc.Motion:Set(gameConfig.ennemies.police.speed, 0, 0)
-                ease:linear(npc.Rotation, 0.2).Y = math.rad(90)
-            end
-        end
-
-        npc.setDirectionLeft(math.random(1, 2) == 1)
+        local direction = math.random(1, 2) == 1 and -1 or 1
+        inverseDirection(npc, direction, gameConfig.ennemies.police.speed)
         npc.kill = function(reason)
             npc.Physics = PhysicsMode.Disabled
             dustifyModule.dustify(npc, { direction = npc.Motion, velocity = Number3(50, 100, 5), bounciness = 0.15, collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL })
@@ -409,22 +420,24 @@ spawners = {
         end
     
         npc.OnCollisionBegin = function(self, collider, normal)
+            if not collider:GetParent() then
+                return
+            end
+
             if collider.CollisionGroups == COLLISION_GROUP_WALL or collider.CollisionGroups == COLLISION_GROUP_PROPS then
                 if math.abs(normal.X) > 0.5 then
-                    npc.setDirectionLeft(self.Motion.X > 0)
+                    inverseDirection(npc, nil, gameConfig.ennemies.police.speed)
                 end
-            elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
-                if normal.Y >= 1.0 then
-                    if collider:GetParent():GetParent().id ~= self.spawnFloor then
-                        self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE, collider)
-                    end
+            elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW and normal.Y >= 1.0 then
+                if collider:GetParent():GetParent().id ~= self.spawnFloor then
+                    self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE, collider)
                 end
             end
         end
 
         npc:SetParent(room)
         npc.LocalPosition = Number3(position.X, position.Y, 0)
-        npc.spawnFloor = room.id
+        npc.spawnFloor = room:GetParent():GetParent().id
         npc.life = 1
 
         return npc
@@ -524,6 +537,26 @@ gameManager = {
         Camera.Rotation:Set(0, 0, 0)
         cameraContainer.time = 0
 
+        -- Set zoom according screen size
+        local minZoom = -190
+        local maxZoom = -160
+        local aspectRatioMultiplier = 1.2
+        local function updateCameraZoom()
+            local screenRatio = Screen.Width / Screen.Height
+            local baseZoom = -175
+            local adjustedZoom = baseZoom * (screenRatio * aspectRatioMultiplier)
+
+            adjustedZoom = math.max(minZoom, math.min(maxZoom, adjustedZoom))
+
+            gameConfig.camera.defaultZoom = adjustedZoom
+            gameConfig.camera.playerOffset.Z = adjustedZoom
+        end
+
+        updateCameraZoom()
+        Screen.DidResize = function()
+            updateCameraZoom()
+        end
+
         cameraContainer.Tick = function(_, dt)
             local playerPositionY = Player.Position.Y + gameConfig.camera.playerOffset.Y
             if playerPositionY < cameraContainer.targetFollower.LocalPosition.Y then
@@ -617,6 +650,8 @@ levelManager = {
     _floorWithoutZombieCount = 0,
     _totalFloorSpawned = 0,
     _lastRoomConfigs = {}, -- Used to avoid same rooms in a row
+    _roofTop = nil,
+    _roomsPool = nil,
 
     init = function()
         levelManager._floors = fifo()
@@ -627,6 +662,19 @@ levelManager = {
                 self.Position = Camera.Position - Number3(self.Scale.X, self.Scale.Y, -self.Scale.Z) / 2
             end
         end)
+
+        levelManager._roofTop = levelManager.generateRoom(true, -1)
+
+        -- Pre-generate rooms
+        local poolRoomConfig = 0
+        levelManager._roomsPool = poolSystem.create(gameConfig.theme.roomThemeCount, function()
+            poolRoomConfig = poolRoomConfig + 1
+            if poolRoomConfig > gameConfig.theme.roomThemeCount then
+                poolRoomConfig = 1
+            end
+
+            return levelManager.generateRoom(false, poolRoomConfig)
+        end, true)
     end,
     currentFloor = function(positionY)
         return math.floor(positionY / ROOM_DIMENSIONS.Y)
@@ -637,7 +685,7 @@ levelManager = {
         local newConfig
 
         repeat
-            newConfig = math.random(1, 9)
+            newConfig = math.random(1, gameConfig.theme.roomThemeCount)
             attempts = attempts + 1
         until (not table.contains(levelManager._lastRoomConfigs, newConfig) or attempts >= maxAttempts)
         table.insert(levelManager._lastRoomConfigs, 1, newConfig)
@@ -718,17 +766,9 @@ levelManager = {
         local roomStructure = roomModule.create(roomConfig)
         roomStructure.root:SetParent(room)
         roomStructure.root.Scale = Number3(4, 4, 4)
-        roomStructure.walls[Face.Bottom].CollisionGroups = COLLISION_GROUP_FLOOR_BELOW
-        roomStructure.walls[Face.Bottom].CollidesWithGroups = COLLISION_GROUP_PLAYER
 
         if roomStructure.walls[Face.Back] then
             roomStructure.walls[Face.Back].Physics = PhysicsMode.Disabled
-        end
-
-        if bottomColor then
-            roomStructure.walls[Face.Bottom].paintShape.CollisionGroups = COLLISION_GROUP_NONE
-            roomStructure.walls[Face.Bottom].paintShape.CollidesWithGroups = COLLISION_GROUP_NONE
-            roomStructure.walls[Face.Bottom].paintShape.Physics = false
         end
 
         local roomProps = Object()
@@ -753,6 +793,20 @@ levelManager = {
         dynamicPropsContainer:SetParent(roomProps)
         room.dynamicPropsContainer = dynamicPropsContainer
 
+        -- Floor number
+        local colorIntensity = math.max(255 - levelManager._totalFloorSpawned, 0)
+        local t = Text()
+        t:SetParent(room.propsContainer)
+        t.Text = "0"
+        t.Type = TextType.World
+        t.Anchor = { 1, 0.5 }
+        t.IsUnlit = true
+        t.Color = Color(255, colorIntensity, colorIntensity)
+        t.BackgroundColor = Color(0, 0, 0, 70)
+        t.FontSize = 8
+        t.LocalPosition = { ROOM_DIMENSIONS.X / 2.0 - 12, ROOM_DIMENSIONS.Y - 12, -ROOM_DIMENSIONS.Z * 0.5 }
+        room.floorNumber = t
+
         return room
     end,
     destroyGround = function(floorCollider)
@@ -773,7 +827,7 @@ levelManager = {
         floorCollider.Physics = PhysicsMode.StaticPerBlock
         local impactPosition = impact.Block.Coordinates
         floorCollider.room:createHoleFromBlockCoordinates(Face.Bottom, impactPosition, gameConfig.player.floorImpactSize)
-        playerManager.calmDownAnger(0.1)
+        playerManager.calmDownAnger(gameConfig.player.destroyGroundAngerReductionAmount)
         gameManager.increaseStat("destroyedGround", 1, nil)
     end,
     damageProp = function(prop, damageCount)
@@ -785,7 +839,7 @@ levelManager = {
         else
             local destroySound = prop.destroySound or "gun_shot_2"
             sfx(destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.55 })
-            dustifyModule.dustify(prop, { collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL, bounciness = 0.15 })
+            dustifyModule.dustify(prop, { collisionGroups = COLLISION_GROUP_PARTICLES, collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL, bounciness = 0.15, stride = 5 })
             prop:RemoveFromParent()
             playerManager.calmDownAnger(3)
             gameManager.increaseStat("destroyedProps", 1, prop)
@@ -1086,9 +1140,30 @@ levelManager = {
             levelManager.prepareProp(floor, prop)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 10, 0, ROOM_DIMENSIONS.Z * 0.5 - 16)
             changeTint(prop, hue)
+        elseif floor.config == 10 then
+            local prop = Shape(Items.voxels.easel)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 22, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = math.pi / 2 + 0.72
+            changeTint(prop, hue)
+
+            prop = Shape(Items.voxels.globe)
+            levelManager.prepareProp(floor, prop)
+            prop.LocalRotation.Y = math.random() * math.pi * 2
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 33, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 12)
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.claire.painting12)
+            levelManager.prepareProp(floor, prop)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalScale = Number3(0.85, 0.85, 0.85)
+            prop.LocalPosition = Number3(0, prop.Height * 0.5 + 11, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            changeTint(prop, hue)
         end
     end,
-    addDynamicProps = function (propsContainer, config, metadata)
+    addDynamicProps = function (propsContainer, config)
         if config == 1 then
             local prop = Shape(Items.claire.office_cabinet)
             levelManager.prepareProp(propsContainer, prop, "hitmarker_2", "gun_shot_2", true)
@@ -1098,8 +1173,8 @@ levelManager = {
             prop.Physics = PhysicsMode.Static
             prop.life = 2
 
-            if metadata.showCubzhFounders then
-                local avatarGaetan = gameConfig.avatars.gaetan
+            local avatarGaetan = gameConfig.avatars.gaetan
+            if not avatarGaetan:GetParent() then
                 avatarGaetan:SetParent(propsContainer)
                 avatarGaetan.Physics = PhysicsMode.Dynamic
                 avatarGaetan.Rotation.Y = math.pi - 0.35
@@ -1161,6 +1236,17 @@ levelManager = {
                 prop.LocalPosition.Z = prop.LocalPosition.Z + (i * 5) - 15
             end
         elseif config == 6 then
+            local prop = Shape(Items.kooow.table_round_gwcloth)
+            levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+            prop.life = 2
+            prop.LocalScale = Number3(0.5, 0.7, 0.5)
+            prop.Rotation.Y = math.pi / 2
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 40, 0, 0)
+
+            local foodPlate = Shape(Items.chocomatte.diner_food)
+            foodPlate:SetParent(prop)
+            foodPlate.LocalPosition = Number3(35, 15, 15)
+
             local character = gameConfig.avatars.boumety
             if not character:GetParent() then
                 character.Physics = false
@@ -1216,6 +1302,40 @@ levelManager = {
             prop.life = 3
             prop.Scale = Number3(0.7, 0.7, 0.7)
             prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 25, prop.Height * 0.5 - 8, ROOM_DIMENSIONS.Z * 0.5 - 10)
+        elseif config == 10 then
+            local prop = Shape(Items.voxels.drafting_table)
+            levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + prop.Width * 0.5 - 6.5, prop.Height * 0.5 - 5, -8)
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.life = 2
+
+            prop = Shape(Items.voxels.open_upright_piano)
+            levelManager.prepareProp(propsContainer, prop, "piano_attack", nil, true)
+            prop.life = 3
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Depth * 0.5 - 10, prop.Height * 0.5 - 15, 0)
+            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = math.pi / 2
+
+            local character = gameConfig.avatars.voxels
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(propsContainer)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(-10, 0, 7)
+                character.Rotation.Y = math.pi - 0.6
+                character.Tick = followPlayerPosition
+            end
+
+            local character = gameConfig.avatars.uevoxel
+            if not character:GetParent() then
+                character.Physics = false
+                character:SetParent(propsContainer)
+                character.Scale = Number3(0.5, 0.5, 0.5)
+                character.LocalPosition = Number3(10, 0, 7)
+                character.Rotation.Y = math.pi + 0.6
+                character.Tick = followPlayerPosition
+            end
         end
     end,
     addFloorBonuses = function(floor)
@@ -1250,57 +1370,61 @@ levelManager = {
         for floorLevel = 0, floorCount - 1 do
             local currentFloor = startFloor - floorLevel
 
-            local groundOnly = currentFloor == -1
-            local randomConfig = levelManager.getNewRandomConfig() or math.random(1, 9)
+            local floor = nil
             if currentFloor == -1 then
-                randomConfig = -1
-            elseif currentFloor == -2 then
-                randomConfig = 1
+                floor = levelManager._roofTop
+            else
+                floor = levelManager._roomsPool:acquire()
             end
-
-            local floor = levelManager.generateRoom(groundOnly, randomConfig)
             floor:SetParent(World)
             floor.id = currentFloor
             floor.Position.Y = currentFloor * ROOM_DIMENSIONS.Y
+            floor.floorNumber.Text = levelManager._totalFloorSpawned
 
-            levelManager.addDynamicProps(floor.dynamicPropsContainer, randomConfig, {
-                showCubzhFounders = currentFloor == -2,
-            })
+            -- Configure destructurable floor
+            floor.structure:createWall(Face.Bottom, 2, floor.structure.walls[Face.Bottom].color)
+            floor.structure.walls[Face.Bottom].Physics = PhysicsMode.Static
+            floor.structure.walls[Face.Bottom].CollisionGroups = COLLISION_GROUP_FLOOR_BELOW
+            floor.structure.walls[Face.Bottom].CollidesWithGroups = COLLISION_GROUP_PLAYER
+            if floor.structure.walls[Face.Bottom].paintShape then
+                floor.structure.walls[Face.Bottom].paintShape.CollisionGroups = COLLISION_GROUP_NONE
+                floor.structure.walls[Face.Bottom].paintShape.CollidesWithGroups = COLLISION_GROUP_NONE
+                floor.structure.walls[Face.Bottom].paintShape.Physics = false
+            end
+
+            -- Room dynamic content: bonuses & destructurable props
+            levelManager.addDynamicProps(floor.dynamicPropsContainer, floor.propsContainer.config)
             if currentFloor < -1 then
                 levelManager.addFloorBonuses(floor.dynamicPropsContainer)
-
-                local colorIntensity = math.max(255 - levelManager._totalFloorSpawned, 0)
-                local t = Text()
-                t:SetParent(floor.dynamicPropsContainer)
-                t.Text = levelManager._totalFloorSpawned
-                t.Type = TextType.World
-                t.Anchor = { 1, 0.5 }
-                t.IsUnlit = true
-                t.Color = Color(255, colorIntensity, colorIntensity)
-                t.BackgroundColor = Color(0, 0, 0, 70)
-                t.FontSize = 8
-                t.LocalPosition = { ROOM_DIMENSIONS.X / 2.0 - 12, ROOM_DIMENSIONS.Y - 12, -ROOM_DIMENSIONS.Z * 0.5 }
+            else
+                floor.floorNumber.IsHidden = true
             end
 
             levelManager._floors:push(floor)
             levelManager._totalFloorSpawned = levelManager._totalFloorSpawned + 1
         end
-        levelManager._lastFloorSpawned = levelManager._lastFloorSpawned - floorCount
 
+        -- Remove previous floors
+        levelManager._lastFloorSpawned = levelManager._lastFloorSpawned - floorCount
         if #levelManager._floors > gameConfig.floorInMemoryMax then
             levelManager.removeFloors(#levelManager._floors - gameConfig.floorInMemoryMax)
         end
     end,
     removeFloor = function(floor)
-        local childrenCount = floor.dynamicPropsContainer.ChildrenCount
-        for i = 0, childrenCount - 1 do
-            local child = floor.dynamicPropsContainer:GetChild(i)
+        while floor.dynamicPropsContainer.ChildrenCount > 0 do
+            local child = floor.dynamicPropsContainer:GetChild(1)
             if child.poolIndex then
                 spawners.coinPool:release(child)
             end
+
+            child:RemoveFromParent()
         end
 
-        floor:RemoveFromParent()
+        if floor.poolIndex then
+            levelManager._roomsPool:release(floor)
+        else
+            floor:RemoveFromParent()
+        end
     end,
     removeFloors = function(count)
         for _ = 0, count do
@@ -1429,17 +1553,6 @@ playerManager = {
         end
     end,
     collisionBegin = function(self, collider, normal)
-        local inverseDirection = function (direction)
-            local newDirection = direction or -Player.Motion.X
-            if newDirection < 0 then
-                Player.Motion:Set(-playerManager._speed, 0, 0)
-                ease:linear(Player.Rotation, 0.2).Y = math.rad(-90 + 360)
-            else
-                Player.Motion:Set(playerManager._speed, 0, 0)
-                ease:linear(Player.Rotation, 0.2).Y = math.rad(90)
-            end
-        end
-
         if collider.CollisionGroups == COLLISION_GROUP_WALL then
             sfx("walk_concrete_1", {
                 Position = Player.Position,
@@ -1447,7 +1560,7 @@ playerManager = {
                 Pitch = 0.4 + math.random() * 0.2,
                 Spatialized = true,
             })
-            inverseDirection()
+            inverseDirection(self, nil, playerManager._speed)
         elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW then
             if playerManager._digging then
                 if playerManager._diggingForceAccumulator > 0 then
@@ -1479,7 +1592,7 @@ playerManager = {
         elseif collider.CollisionGroups == COLLISION_GROUP_PROPS then
             if not playerManager._digging then
                 if math.abs(normal.X) > 0.5 then
-                    inverseDirection()
+                    inverseDirection(self, nil, playerManager._speed)
                 end
                 return
             end
@@ -1495,10 +1608,11 @@ playerManager = {
             levelManager.damageProp(collider, 1)
             playerManager.stopDigging()
             Player.Velocity.Y = gameConfig.player.bumpVelocity.Y
+            Player.Velocity.X = 0
             Client:HapticFeedback()
         end
     end,
-    takeDamage = function(damageCount, knockback, collider)
+    takeDamage = function(damageCount, _, collider)
         if playerManager._invincible or playerManager._diggingInvincible then
             if collider.takeDamage then
                 collider.takeDamage(9999, GAME_DEAD_REASON.DAMAGE)
@@ -1508,8 +1622,6 @@ playerManager = {
 
         playerManager._life = playerManager._life - damageCount
         gameManager._cameraContainer.shake(damageCount * 50)
-        Player.Velocity.X = knockback.X
-        Player.Velocity.Y = knockback.Y
 
         if playerManager._life > 0 then
             sfx("hurtscream_1", { Position = Player.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
@@ -1670,6 +1782,10 @@ uiManager = {
             gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies +
             gameManager._stats.destroyedProps * gameConfig.points.destroyedProps
         ) * floorReached
+
+        if floorReached > 35 then
+            sfx("crowdapplause_1", { Pitch = 1.0 , Volume = 0.45 })
+        end
 
         -- Save score to leaderboard
         leaderboard:set({
