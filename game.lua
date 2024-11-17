@@ -9,10 +9,10 @@ Modules = {
     uitheme = "uitheme",
     ui = "uikit",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:55d5e98",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:55d5e98",
-    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:55d5e98",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:55d5e98",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:c4311ca",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:c4311ca",
+    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:c4311ca",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:c4311ca",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -1373,8 +1373,10 @@ levelManager = {
             local floor = nil
             if currentFloor == -1 then
                 floor = levelManager._roofTop
-            else
+            elseif currentFloor == -2 then
                 floor = levelManager._roomsPool:acquire()
+            else
+                floor = levelManager._roomsPool:acquireRandom()
             end
             floor:SetParent(World)
             floor.id = currentFloor
