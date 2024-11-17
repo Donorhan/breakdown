@@ -214,8 +214,8 @@ spawners = {
     bonusesRotation = 0,
     lastFoodSpawnedFloorCount = 0,
     init = function ()
-        spawners.coinPool = poolSystem.create(35, function() return spawners.createBonus(GAME_BONUSES.COIN) end, true)
-        spawners.groundParticlePool = poolSystem.create(30, spawners.createGroundParticle, true)
+        spawners.coinPool = poolSystem.create(55, function() return spawners.createBonus(GAME_BONUSES.COIN) end, true)
+        spawners.groundParticlePool = poolSystem.create(70, spawners.createGroundParticle, true)
     end,
     randomPositionInRoom = function(paddingX, paddingY)
         local x = math.random(-ROOM_DIMENSIONS.X / 2.0 + paddingX, ROOM_DIMENSIONS.X / 2.0 - paddingX)
@@ -264,7 +264,6 @@ spawners = {
         end
 
         bonus.IsUnlit = true
-        bonus.type = bonusType
         bonus.CollisionGroups = COLLISION_GROUP_BONUS
         bonus.CollidesWithGroups = COLLISION_GROUP_PLAYER
         bonus.Physics = PhysicsMode.Trigger
@@ -385,6 +384,7 @@ spawners = {
         model.LocalPosition = Number3(0, 0, 0)
         model.Physics = PhysicsMode.Disabled
         model.LocalScale = Number3(0.5, 0.5, 0.5) / npc.Scale
+        model.Shadow = true
         Timer(1, false, function()
             model.Animations.Walk:Play()
         end)
@@ -496,7 +496,24 @@ gameManager = {
     _music = nil,
 
     init = function()
-        ambience:set(ambience.noon)
+        ambience:set({
+            sky = {
+                skyColor = Color(255,168,255),
+                horizonColor = Color(213,144,201),
+                abyssColor = Color(76,144,255),
+                lightColor = Color(101,147,175),
+                lightIntensity = 0.820000,
+            },
+            sun = {
+                color = Color(245,227,194),
+                intensity = 0.900000,
+                rotation = Number3(1.0061164, 0.865181, 0.000000), -- rotation = Number3(1.061164, 3.665181, 0.000000),
+            },
+            ambient = {
+                skyLightFactor = 0.070000,
+                dirLightFactor = 0.220000,
+            }
+        })
         gameManager.initCamera()
         spawners.init()
 
@@ -700,6 +717,7 @@ levelManager = {
         levelManager._floors:flush()
         levelManager._lastFloorSpawned = 0
         levelManager._totalFloorSpawned = 0
+        levelManager._roomsPool:releaseAll()
         spawners.groundParticlePool:releaseAll()
         spawners.coinPool:releaseAll()
         levelManager.spawnFloors(gameConfig.player.viewRange)
@@ -766,6 +784,8 @@ levelManager = {
         local roomStructure = roomModule.create(roomConfig)
         roomStructure.root:SetParent(room)
         roomStructure.root.Scale = Number3(4, 4, 4)
+        roomStructure.walls[Face.Left].Shadow = true
+        roomStructure.walls[Face.Right].Shadow = true
 
         if roomStructure.walls[Face.Back] then
             roomStructure.walls[Face.Back].Physics = PhysicsMode.Disabled
@@ -846,9 +866,10 @@ levelManager = {
             spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.destroyedProps)
         end
     end,
-    prepareProp = function(floor, prop, soundDamage, destroySound, collide)
+    prepareProp = function(floor, prop, soundDamage, destroySound, collide, disableShadow)
         prop.life = 1
         prop:SetParent(floor)
+        prop.Shadow = not disableShadow
         if collide then
             prop.CollisionGroups = COLLISION_GROUP_PROPS
             prop.CollidesWithGroups = COLLISION_GROUP_PLAYER
@@ -957,7 +978,7 @@ levelManager = {
             changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting9)
-            levelManager.prepareProp(floor, prop)
+            levelManager.prepareProp(floor, prop, nil, nil, false, true)
             prop.Rotation.Y = math.pi / 2
             prop.LocalPosition = Number3(0, prop.Height * 0.5 + 22, ROOM_DIMENSIONS.Z * 0.5 - 10)
             changeTint(prop, hue)
@@ -978,7 +999,7 @@ levelManager = {
             changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting13)
-            levelManager.prepareProp(floor, prop)
+            levelManager.prepareProp(floor, prop, nil, nil, false, true)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 55, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
@@ -1047,7 +1068,7 @@ levelManager = {
             changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting15)
-            levelManager.prepareProp(floor, prop)
+            levelManager.prepareProp(floor, prop, nil, nil, false, true)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 + 1, ROOM_DIMENSIONS.Z * 0.5 - 10)
@@ -1068,7 +1089,7 @@ levelManager = {
             changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting6)
-            levelManager.prepareProp(floor, prop)
+            levelManager.prepareProp(floor, prop, nil, nil, false, true)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.5, 0.5, 0.5)
             prop.LocalPosition = Number3(35, ROOM_DIMENSIONS.Y * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 10)
@@ -1103,7 +1124,7 @@ levelManager = {
             end
 
             prop = Shape(Items.pratamacam.green_screen)
-            levelManager.prepareProp(floor, prop)
+            levelManager.prepareProp(floor, prop, nil, nil, false, true)
             prop.Pivot = Number3(prop.Width * 0.5, 0, prop.Depth * 0.5)
             prop.Rotation.Y = math.pi
             prop.LocalScale = Number3(0.6, 0.6, 0.6)
@@ -1156,7 +1177,7 @@ levelManager = {
             changeTint(prop, hue)
 
             prop = Shape(Items.claire.painting12)
-            levelManager.prepareProp(floor, prop)
+            levelManager.prepareProp(floor, prop, nil, nil, false, true)
             prop.Rotation.Y = math.pi / 2
             prop.LocalScale = Number3(0.85, 0.85, 0.85)
             prop.LocalPosition = Number3(0, prop.Height * 0.5 + 11, ROOM_DIMENSIONS.Z * 0.5 - 10)
@@ -1176,6 +1197,7 @@ levelManager = {
             local avatarGaetan = gameConfig.avatars.gaetan
             if not avatarGaetan:GetParent() then
                 avatarGaetan:SetParent(propsContainer)
+                avatarGaetan.Shadow = true
                 avatarGaetan.Physics = PhysicsMode.Dynamic
                 avatarGaetan.Rotation.Y = math.pi - 0.35
                 avatarGaetan.LocalPosition = Number3(-35, 0, 15)
@@ -1183,6 +1205,7 @@ levelManager = {
                 avatarGaetan.Tick = followPlayerPosition
 
                 local avatarAdrien = gameConfig.avatars.aduermael
+                avatarAdrien.Shadow = true
                 avatarAdrien:SetParent(propsContainer)
                 avatarAdrien.Physics = PhysicsMode.Dynamic
                 avatarAdrien.Rotation.Y = math.pi - 0.25
@@ -1274,6 +1297,7 @@ levelManager = {
             local character = gameConfig.avatars.nanskip
             if not character:GetParent() then
                 character.Physics = false
+                character.Shadow = true
                 character:SetParent(propsContainer)
                 character.Scale = Number3(0.5, 0.5, 0.5)
                 character.LocalPosition = Number3(-38, 0, 10)
@@ -1290,6 +1314,7 @@ levelManager = {
             local character = gameConfig.avatars.pratamacam
             if not character:GetParent() then
                 character.Physics = false
+                character.Shadow = true
                 character:SetParent(propsContainer)
                 character.Scale = Number3(0.5, 0.5, 0.5)
                 character.LocalPosition = Number3(0, 0, 10)
@@ -1320,6 +1345,7 @@ levelManager = {
             local character = gameConfig.avatars.voxels
             if not character:GetParent() then
                 character.Physics = false
+                character.Shadow = true
                 character:SetParent(propsContainer)
                 character.Scale = Number3(0.5, 0.5, 0.5)
                 character.LocalPosition = Number3(-10, 0, 7)
@@ -1330,6 +1356,7 @@ levelManager = {
             local character = gameConfig.avatars.uevoxel
             if not character:GetParent() then
                 character.Physics = false
+                character.Shadow = true
                 character:SetParent(propsContainer)
                 character.Scale = Number3(0.5, 0.5, 0.5)
                 character.LocalPosition = Number3(10, 0, 7)
@@ -1388,6 +1415,7 @@ levelManager = {
             floor.structure.walls[Face.Bottom].Physics = PhysicsMode.Static
             floor.structure.walls[Face.Bottom].CollisionGroups = COLLISION_GROUP_FLOOR_BELOW
             floor.structure.walls[Face.Bottom].CollidesWithGroups = COLLISION_GROUP_PLAYER
+            floor.structure.walls[Face.Bottom].Shadow = true
             if floor.structure.walls[Face.Bottom].paintShape then
                 floor.structure.walls[Face.Bottom].paintShape.CollisionGroups = COLLISION_GROUP_NONE
                 floor.structure.walls[Face.Bottom].paintShape.CollidesWithGroups = COLLISION_GROUP_NONE
@@ -1424,12 +1452,11 @@ levelManager = {
 
         if floor.poolIndex then
             levelManager._roomsPool:release(floor)
-        else
-            floor:RemoveFromParent()
         end
+        floor:RemoveFromParent()
     end,
     removeFloors = function(count)
-        for _ = 0, count do
+        for _ = 1, count do
             local oldRoom = levelManager._floors:pop()
             if oldRoom then
                 levelManager.removeFloor(oldRoom)
@@ -1477,9 +1504,9 @@ playerManager = {
 
         -- light around player
         local l = Light()
-        l.Radius = 35
-        l.Hardness = 0.1
-        l.Color = Color(0.7, 0.7, 0.7)
+        l.Radius = 32
+        l.Hardness = 0.25
+        l.Color = Color(0.9, 0.7, 0.9)
         l.On = true
         l.LocalPosition.Z = -10
         l.LocalPosition.Y = 5
