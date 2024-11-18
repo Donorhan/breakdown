@@ -9,10 +9,10 @@ Modules = {
     uitheme = "uitheme",
     ui = "uikit",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:c4311ca",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:c4311ca",
-    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:c4311ca",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:c4311ca",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:cd7ebf5",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:cd7ebf5",
+    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:cd7ebf5",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:cd7ebf5",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -50,6 +50,7 @@ Config = {
         "pratamacam.green_screen",
         "pratamacam.chair01",
         "pratamacam.snake_plant",
+        "avatoon.book_shelf",
         "chocomatte.diner_food",
         "voxels.punching_bag",
         "uevoxel.vending_machine01",
@@ -58,6 +59,8 @@ Config = {
         "voxels.easel",
         "voxels.globe",
         "voxels.open_upright_piano",
+        "pratamacam.vintage__robot",
+        "chocomatte.tomato_crate",
     },
 }
 
@@ -93,7 +96,7 @@ local gameConfig = {
     musicVolume = 0.5,
     leaderboardName = "no-elevator",
     camera = {
-        followSpeed = 0.05,
+        followSpeed = 0.1,
         defaultZoom = -175,
         playerOffset = Number3(0, 20, -175),
         zoomSpeed = 2.0,
@@ -103,10 +106,10 @@ local gameConfig = {
     },
     theme = {
         room = {
-            saturation = 18,
-            backgroundLightness = 55,
+            saturation = 27,
+            backgroundLightness = 58,
             wallLightness = 36,
-            exteriorColor = Color(180, 180, 180),
+            exteriorColor = Color(168, 165, 165),
         },
         ui = {
             backgroundColor = Color(32, 37, 48, 220),
@@ -132,6 +135,14 @@ local gameConfig = {
         viewRange = 3, -- Amount of rooms to the under the player
         floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
         bumpVelocity = Number2(0, 170), -- Bump velocity when player jump on something
+        timeBetweenDashGhosts = 0.021,
+        dashGhostDuration = 0.23,
+        dashGhostColor = Color(157, 157, 255, 0.9),
+        defaultLight = {
+            radius = 32,
+            hardness = 0.15,
+            color = Color(0.9, 0.7, 0.9),
+        },
     },
     points = {
         food = 100,
@@ -202,6 +213,71 @@ local inverseDirection = function (obj, direction, speed)
         obj.Motion:Set(speed, 0, 0)
         ease:linear(obj.Rotation, 0.2).Y = math.rad(90)
     end
+end
+
+local clonePlayer = function()
+    local ghost = Object()
+    ghost.IsHidden = true
+    ghost.Rotation = Player.Rotation
+    ghost.Position = Player.Position
+    ghost.Scale = Player.Scale
+    ghost._palette = Palette()
+    local color = Color(255, 255, 255, 0)
+    for _ = 1, 30 do
+        ghost._palette:AddColor(color)
+    end
+    
+    hierarchyActions:applyToDescendants(Player, { includeRoot = true }, function(o)
+        if type(o) == "Shape" or type(o) == "MutableShape" then
+            local clonedPart = o:Copy()
+            clonedPart:SetParent(ghost)
+            clonedPart.Physics = PhysicsMode.Disabled
+            clonedPart.CollidesWithGroups = COLLISION_GROUP_NONE
+            clonedPart.CollisionGroups = COLLISION_GROUP_NONE
+            clonedPart.IsUnlit = true
+            clonedPart.Shadow = false
+            clonedPart.InnerTransparentFaces = false
+            clonedPart.LocalRotation = o.LocalRotation
+            clonedPart.LocalPosition = o.LocalPosition
+            clonedPart.LocalScale = o.LocalScale
+            clonedPart.Palette = ghost._palette
+        end
+    end)
+
+    return ghost
+end
+
+local spawnDashGhost = function(color, duration)
+    local playerCloned = playerManager._dashGhostPool:acquire()
+    if playerCloned == nil then
+        return
+    end
+
+    playerCloned:SetParent(World)
+    playerCloned.IsHidden = false
+    playerCloned.Rotation = Player.Rotation
+    playerCloned.Position = Player.Position
+    playerCloned.Scale = Player.Scale
+
+    local conf = {
+        onUpdate = function(obj)
+            local updatedColor = Color(color.R, color.G, color.B, obj.easeLerp)
+            for i = 1, #playerCloned._palette do
+                playerCloned._palette[i].Color = updatedColor
+            end
+        end,
+        onDone = function()
+            ease:cancel(playerCloned.easeColor)
+            playerCloned.IsHidden = true
+            playerCloned:RemoveFromParent()
+            playerManager._dashGhostPool:release(playerCloned)
+        end,
+    }
+
+    ease:cancel(playerCloned.easeColor)
+    playerCloned.easeLerp = color.A / 255.0
+    playerCloned.easeColor = ease:linear(playerCloned, duration, conf)
+    playerCloned.easeColor.easeLerp = 0.0
 end
 
 
@@ -603,13 +679,14 @@ gameManager = {
 
             cameraContainer.Position = shakeOffset
         
-            local lerpedPositionY = (cameraContainer.targetFollower.Position.Y - Camera.Position.Y) * gameConfig.camera.followSpeed
+            local speed = gameConfig.camera.followSpeed * dt * 60
+            local lerpedPositionY = (cameraContainer.targetFollower.Position.Y - Camera.Position.Y) * speed
             Camera.Position.Y = Camera.Position.Y + lerpedPositionY
         
-            local lerpedPositionX = (cameraContainer.targetFollower.Position.X - Camera.Position.X) * gameConfig.camera.followSpeed
+            local lerpedPositionX = (cameraContainer.targetFollower.Position.X - Camera.Position.X) * speed
             Camera.Position.X = Camera.Position.X + lerpedPositionX
         
-            local lerpedPositionZ = (gameConfig.camera.playerOffset.Z - Camera.Position.Z) * gameConfig.camera.followSpeed
+            local lerpedPositionZ = (gameConfig.camera.playerOffset.Z - Camera.Position.Z) * speed
             Camera.Position.Z = Camera.Position.Z + lerpedPositionZ
         end
 
@@ -729,7 +806,7 @@ levelManager = {
         local saturation = gameConfig.theme.room.saturation
         local backgroundColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.backgroundLightness)
         local wallColor = helpers.colors.HSLToRGB(hue, saturation, gameConfig.theme.room.wallLightness)
-        local bottomColor = helpers.colors.HSLToRGB(hue, saturation, math.random(70, 75))
+        local bottomColor = helpers.colors.HSLToRGB(hue, saturation, math.random(65, 70))
         if groundOnly then
             bottomColor = nil
         end
@@ -1007,23 +1084,23 @@ levelManager = {
         elseif floor.config == 3 then
             local prop = Shape(Items.claire.desk7)
             levelManager.prepareProp(floor, prop)
-            prop.Scale = Number3(0.6, 0.6, 0.6)
-            prop.LocalRotation.Y = 0
-            prop.LocalPosition = Number3(-38, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
-            changeTint(prop, hue)
-
-            prop = Shape(Items.claire.desk7)
-            levelManager.prepareProp(floor, prop)
-            prop.Scale = Number3(0.6, 0.6, 0.6)
-            prop.LocalRotation.Y = 0
-            prop.LocalPosition = Number3(-17, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - 5)
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalRotation.Y = math.pi
+            prop.LocalPosition = Number3(-29, prop.Height * 0.5 - 5, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth * 0.5 - 2)
             changeTint(prop, hue)
 
             prop = Shape(Items.piaa.book_shelf)
             levelManager.prepareProp(floor, prop)
-            prop.Scale = Number3(0.5, 0.5, 0.5)
+            prop.Scale = Number3(0.6, 0.6, 0.6)
+            prop.LocalRotation.Y = math.pi
+            prop.LocalPosition = Number3(10,  prop.Height * 0.5 - 12, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth * 0.5 - 5)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.avatoon.book_shelf)
+            levelManager.prepareProp(floor, prop)
+            prop.Scale = Number3(0.6, 0.6, 0.6)
             prop.LocalRotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 9,  prop.Height * 0.5 - 12, 8)
+            prop.LocalPosition = Number3(-20, ROOM_DIMENSIONS.Y * 0.5, ROOM_DIMENSIONS.Z * 0.5 - prop.Depth * 0.5)
             changeTint(prop, hue)
         elseif floor.config == 4 then
             local prop = Shape(Items.kooow.cardboard_box_long)
@@ -1045,6 +1122,27 @@ levelManager = {
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = -0.5
             prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 21, 7, 5)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.kooow.cardboard_box_small)
+            levelManager.prepareProp(floor, prop)
+            prop.Scale = Number3(0.7, 0.7, 0.7)
+            prop.LocalRotation.Y = -2.35
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 31, 0, 7)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.kooow.cardboard_box_small)
+            levelManager.prepareProp(floor, prop)
+            prop.Scale = Number3(0.85, 0.85, 0.85)
+            prop.LocalRotation.Y = -2
+            prop.LocalPosition = Number3(0, 0, 8)
+            changeTint(prop, hue)
+
+            prop = Shape(Items.pratamacam.vintage__robot)
+            levelManager.prepareProp(floor, prop)
+            prop.Scale = Number3(0.45, 0.45, 0.45)
+            prop.LocalRotation.Y = -2.33
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 15, prop.Height - 4, 6)
             changeTint(prop, hue)
         elseif floor.config == 5 then
             local prop = Shape(Items.kooow.cardboard_box_long)
@@ -1226,14 +1324,14 @@ levelManager = {
             prop.life = 2
             prop.LocalScale = Number3(1.2, 1.2, 1.2)
             prop.LocalRotation.Y = math.pi / 2
-            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 20)
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 12, prop.Height * 0.5 + 1, -2)
 
             prop = Shape(Items.uevoxel.bed)
             levelManager.prepareProp(propsContainer, prop, nil, nil, true)
-            prop.life = 3
+            prop.life = 4
             prop.Scale = Number3(0.7, 0.7, 0.7)
-            prop.LocalRotation.Y = math.pi
-            prop.LocalPosition = Number3(15, prop.Height * 0.5 - 1, ROOM_DIMENSIONS.Z * 0.5 - 29)
+            prop.LocalRotation.Y = -math.pi / 2
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Depth * 0.5, prop.Height * 0.5 - 3, ROOM_DIMENSIONS.Z * 0.5 - 29)
         elseif config == 4 then
         elseif config == 5 then
             local position = spawners.randomPositionInRoom(5, 0)
@@ -1270,6 +1368,13 @@ levelManager = {
             foodPlate:SetParent(prop)
             foodPlate.LocalPosition = Number3(35, 15, 15)
 
+            prop = Shape(Items.chocomatte.tomato_crate)
+            levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+            prop.LocalScale = Number3(0.5, 0.5, 0.5)
+            prop.LocalRotation.Y = math.pi / 2
+            prop.life = 2
+            prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + prop.Depth * 0.5, 0, -2)
+
             local character = gameConfig.avatars.boumety
             if not character:GetParent() then
                 character.Physics = false
@@ -1284,15 +1389,15 @@ levelManager = {
             levelManager.prepareProp(propsContainer, prop, nil, nil, true)
             prop.life = 2
             prop.Rotation.Y = math.pi
-            prop.LocalScale = Number3(0.7, 0.7, 0.7)
-            prop.LocalPosition = Number3(-18, 8, 4)
+            prop.LocalScale = Number3(0.6, 0.6, 0.6)
+            prop.LocalPosition = Number3(-18, 7, 4)
 
             prop = Shape(Items.uevoxel.gym01)
             levelManager.prepareProp(propsContainer, prop, nil, nil, true)
             prop.life = 2
             prop.Rotation.Y = math.pi
-            prop.LocalScale = Number3(0.7, 0.7, 0.7)
-            prop.LocalPosition = Number3(9, 8, 4)
+            prop.LocalScale = Number3(0.6, 0.6, 0.6)
+            prop.LocalPosition = Number3(9, 7, 4)
 
             local character = gameConfig.avatars.nanskip
             if not character:GetParent() then
@@ -1326,7 +1431,7 @@ levelManager = {
             prop.LocalRotation.Y = math.pi / 2
             prop.life = 3
             prop.Scale = Number3(0.7, 0.7, 0.7)
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 25, prop.Height * 0.5 - 8, ROOM_DIMENSIONS.Z * 0.5 - 10)
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 24, prop.Height * 0.5 - 9, ROOM_DIMENSIONS.Z * 0.5 - 10)
         elseif config == 10 then
             local prop = Shape(Items.voxels.drafting_table)
             levelManager.prepareProp(propsContainer, prop, nil, nil, true)
@@ -1337,8 +1442,8 @@ levelManager = {
 
             prop = Shape(Items.voxels.open_upright_piano)
             levelManager.prepareProp(propsContainer, prop, "piano_attack", nil, true)
-            prop.life = 3
-            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Depth * 0.5 - 10, prop.Height * 0.5 - 15, 0)
+            prop.life = 2
+            prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Depth * 0.5 - 6, prop.Height * 0.5 - 16, 0)
             prop.Scale = Number3(0.5, 0.5, 0.5)
             prop.LocalRotation.Y = math.pi / 2
 
@@ -1411,7 +1516,7 @@ levelManager = {
             floor.floorNumber.Text = levelManager._totalFloorSpawned
 
             -- Configure destructurable floor
-            floor.structure:createWall(Face.Bottom, 2, floor.structure.walls[Face.Bottom].color)
+            floor.structure:createWall(Face.Bottom, 2, floor.structure.config.bottom.color)
             floor.structure.walls[Face.Bottom].Physics = PhysicsMode.Static
             floor.structure.walls[Face.Bottom].CollisionGroups = COLLISION_GROUP_FLOOR_BELOW
             floor.structure.walls[Face.Bottom].CollidesWithGroups = COLLISION_GROUP_PLAYER
@@ -1492,6 +1597,8 @@ playerManager = {
     _anger = 0,
     _angerMax = gameConfig.player.defaultAngerMax,
     _invincible = false,
+    _dashLastGhostElapsedTime = 0,
+    _dashGhostPool = nil,
 
     init = function()
         Player.IsHidden = false
@@ -1504,13 +1611,14 @@ playerManager = {
 
         -- light around player
         local l = Light()
-        l.Radius = 32
-        l.Hardness = 0.25
-        l.Color = Color(0.9, 0.7, 0.9)
+        l.Radius = gameConfig.player.defaultLight.radius
+        l.Hardness = gameConfig.player.defaultLight.hardness
+        l.Color = gameConfig.player.defaultLight.color
         l.On = true
         l.LocalPosition.Z = -10
         l.LocalPosition.Y = 5
         l:SetParent(Player)
+        Player.light = l
 
         -- particles
         local walkParticles = particles:newEmitter({
@@ -1522,7 +1630,7 @@ playerManager = {
                 return Number3(0, 0, 0)
             end,
             color = function()
-                return gameConfig.theme.room.exteriorColor
+                return Color(255, 255, 255)
             end,
             scale = function()
                 return 1.5
@@ -1545,6 +1653,8 @@ playerManager = {
                 end
             end
         end
+
+        playerManager._dashGhostPool = poolSystem.create(15, clonePlayer, true)
     end,
     reset = function()
         Player.Position = Number3(0, 0, 0)
@@ -1572,11 +1682,18 @@ playerManager = {
         playerManager._digging = true
         playerManager._diggingForceAccumulator = diggingForce
         playerManager._diggingInvincible = invincible
+        Player.light.Radius = 37
+        Player.light.Hardness = 0.40
+        Player.light.Color = Color(0.9, 0.7, 0.9)
     end,
     stopDigging = function()
         playerManager._digging = false
         playerManager._diggingForceAccumulator = 0
         playerManager._diggingInvincible = false
+        Player.light.Radius = gameConfig.player.defaultLight.radius
+        Player.light.Hardness = gameConfig.player.defaultLight.hardness
+        Player.light.Color = gameConfig.player.defaultLight.color
+
         if Player.Motion.X == 0 then
             playerManager.reachedFirstFloor()
         end
@@ -1677,6 +1794,15 @@ playerManager = {
 
         -- Collisions can move player's depth so we must fix it here to avoid weird behaviors
         Player.Position.Z = 0
+
+        if playerManager._digging then
+            if playerManager._dashLastGhostElapsedTime >= gameConfig.player.timeBetweenDashGhosts then
+                spawnDashGhost(gameConfig.player.dashGhostColor, gameConfig.player.dashGhostDuration)
+                playerManager._dashLastGhostElapsedTime = 0
+            else
+                playerManager._dashLastGhostElapsedTime = playerManager._dashLastGhostElapsedTime + dt
+            end
+        end
 
         if playerManager._lastFloorReached < -1 then
             playerManager._anger = playerManager._anger + dt
