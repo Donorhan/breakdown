@@ -190,7 +190,7 @@ end
 local hierarchyActions = require("hierarchyactions")
 local changeTint = function(shape, h)
     hierarchyActions:applyToDescendants(shape, { includeRoot = true }, function(o)
-        if type(o) == "Shape" or type(o) == "MutableShape" then
+        if typeof(o) == "Shape" or typeof(o) == "MutableShape" then
             for i = 1, #o.Palette - 1 do
                 local color = o.Palette[i].Color
                 local HSLColor = helpers.colors.RGBToHSL(color)
@@ -228,7 +228,7 @@ local clonePlayer = function()
     end
     
     hierarchyActions:applyToDescendants(Player, { includeRoot = true }, function(o)
-        if type(o) == "Shape" or type(o) == "MutableShape" then
+        if typeof(o) == "Shape" or typeof(o) == "MutableShape" then
             local clonedPart = o:Copy()
             clonedPart:SetParent(ghost)
             clonedPart.Physics = PhysicsMode.Disabled
