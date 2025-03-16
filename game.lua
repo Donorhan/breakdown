@@ -3,16 +3,16 @@ Modules = {
     avatar = "avatar",
     bundle = "bundle",
     ease = "ease",
-    explode = "github.com/aduermael/modzh/explode:b9e5d20",
+    explode = "github.com/aduermael/modzh/explode:701075b",
     particles = "particles",
     sfx = "sfx",
     uitheme = "uitheme",
     ui = "uikit",
     fifo = "github.com/aduermael/modzh/fifo:05cc60a",
-    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:2d1b806",
-    roomModule = "github.com/Donorhan/cubzh-library/room-module:2d1b806",
-    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:2d1b806",
-    helpers = "github.com/Donorhan/cubzh-library/helpers:2d1b806",
+    poolSystem = "github.com/Donorhan/cubzh-library/pool-system:2ab8d15",
+    roomModule = "github.com/Donorhan/cubzh-library/room-module:2ab8d15",
+    dustifyModule = "github.com/Donorhan/cubzh-library/dustify:2ab8d15",
+    helpers = "github.com/Donorhan/cubzh-library/helpers:2ab8d15",
     skybox = "github.com/Nanskip/cubzh-modules/skybox:8aa8b62",
 }
 
@@ -455,7 +455,7 @@ spawners = {
         npc.Scale = Number3(8, 8, 8)
         npc.Rotation.Y = math.pi / 2
 
-        local model = avatar:get({})
+        local model = avatar:get({ usernameOrId = "fax", eyeBlinks = true, defaultAnimations = true })
         model:SetParent(npc)
         model.LocalPosition = Number3(0, 0, 0)
         model.Physics = PhysicsMode.Disabled
