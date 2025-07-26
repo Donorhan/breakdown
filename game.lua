@@ -831,7 +831,9 @@ gameManager = {
 
 		-- Spawner le fantôme au début du jeu
 		if gameManager._ghost then
+			gameManager._ghost.Tick = nil -- Nettoyer la fonction Tick
 			gameManager._ghost:RemoveFromParent()
+			gameManager._ghost = nil
 		end
 		gameManager._ghost = spawners.spawnGhost()
 
@@ -847,6 +849,7 @@ gameManager = {
 
 		-- Nettoyer le fantôme
 		if gameManager._ghost then
+			gameManager._ghost.Tick = nil -- Nettoyer la fonction Tick
 			gameManager._ghost:RemoveFromParent()
 			gameManager._ghost = nil
 		end
@@ -1478,7 +1481,6 @@ levelManager = {
 						playerManager.takeDamage(1, gameConfig.player.bumpVelocity, prop)
 					end
 				end
-				prop.Tick = function(_, _) end
 				prop.LocalPosition.Z = prop.LocalPosition.Z + (i * 5) - 15
 			end
 		elseif config == 6 then
@@ -1502,6 +1504,7 @@ levelManager = {
 
 			local character = gameConfig.avatars.boumety
 			if not character:GetParent() then
+				character.Tick = nil -- Nettoyer l'ancienne fonction Tick
 				character.Physics = false
 				character:SetParent(propsContainer)
 				character.Scale = Number3(0.5, 0.5, 0.5)
@@ -1671,12 +1674,18 @@ levelManager = {
 		end
 	end,
 	removeFloor = function(floor)
+		-- Nettoyer toutes les fonctions Tick des enfants
+		hierarchyActions:applyToDescendants(floor, { includeRoot = true }, function(obj)
+			if obj.Tick then
+				obj.Tick = nil
+			end
+		end)
+
 		while floor.dynamicPropsContainer.ChildrenCount > 0 do
 			local child = floor.dynamicPropsContainer:GetChild(1)
 			if child.poolIndex then
 				spawners.coinPool:release(child)
 			end
-
 			child:RemoveFromParent()
 		end
 
