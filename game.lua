@@ -114,6 +114,7 @@ local gameConfig = {
 	ghost = {
 		followSpeed = 35, -- Vitesse de poursuite du fantôme
 		spawnHeight = 100, -- Hauteur de spawn au-dessus du joueur
+		transparency = 200, -- Transparence du fantôme (0-255)
 	},
 	theme = {
 		room = {
@@ -312,14 +313,16 @@ spawners = {
 		ghost.Shadow = false
 		ghost.Rotation = Number3(0, -math.pi, 0)
 
+		-- Rendre le fantôme translucide
+		for i = 1, #ghost.Palette do
+			local originalColor = ghost.Palette[i].Color
+			-- Garder les couleurs originales mais avec 50% de transparence
+			ghost.Palette[i].Color = Color(originalColor.R, originalColor.G, originalColor.B, gameConfig.ghost.transparency)
+		end
+
 		-- Position initiale au-dessus du joueur
 		ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
 		ghost:SetParent(World)
-
-		-- local updatedColor = Color(color.R, color.G, color.B, obj.easeLerp)
-		-- for i = 1, #playerCloned._palette do
-		-- 	playerCloned._palette[i].Color = updatedColor
-		-- end
 
 		-- Comportement de suivi du joueur
 		ghost.Tick = function(self, dt)
@@ -332,6 +335,44 @@ spawners = {
 
 			-- Déplacer le fantôme vers le joueur
 			self.Position = self.Position + direction * gameConfig.ghost.followSpeed * dt
+
+			-- Rotation légère pour regarder vers le joueur tout en gardant le visage visible
+			local lookDirection = Player.Position - self.Position
+			if lookDirection.Length > 0.1 then
+				-- Calculer les angles avec des limites pour garder le visage visible
+				-- Inverser X pour corriger la direction
+				local angleY = math.atan2(-lookDirection.X, lookDirection.Z)
+				local angleX = math.atan2(-lookDirection.Y, math.sqrt(lookDirection.X ^ 2 + lookDirection.Z ^ 2))
+
+				-- Limiter les rotations pour garder le visage orienté vers la caméra
+				-- Rotation Y limitée à ±45 degrés (π/4)
+				angleY = math.max(-math.pi / 3, math.min(math.pi / 4, angleY))
+				-- Rotation X limitée à ±30 degrés (π/6) vers le bas principalement
+				angleX = math.max(-math.pi / 4, math.min(math.pi / 12, angleX))
+
+				-- Rotation cible
+				local targetRotationY = -math.pi + angleY
+				local targetRotationX = angleX
+
+				-- Fonction pour trouver la différence d'angle la plus courte
+				local function angleDifference(target, current)
+					local diff = target - current
+					while diff > math.pi do
+						diff = diff - 2 * math.pi
+					end
+					while diff < -math.pi do
+						diff = diff + 2 * math.pi
+					end
+					return diff
+				end
+
+				-- Lerp vers la rotation cible pour une transition fluide
+				local lerpSpeed = 3.0 * dt -- Vitesse d'interpolation
+				local diffX = angleDifference(targetRotationX, self.Rotation.X)
+				local diffY = angleDifference(targetRotationY, self.Rotation.Y)
+
+				self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
+			end
 		end
 
 		-- Gestion de collision avec le joueur
