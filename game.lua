@@ -62,6 +62,7 @@ Config = {
 		"voxels.open_upright_piano",
 		"pratamacam.vintage__robot",
 		"chocomatte.tomato_crate",
+		"uevoxel.ghost01",
 	},
 }
 
@@ -83,13 +84,13 @@ local COLLISION_GROUP_BONUS = CollisionGroups(4)
 local COLLISION_GROUP_ENNEMY = CollisionGroups(5)
 local COLLISION_GROUP_PARTICLES = CollisionGroups(6)
 local COLLISION_GROUP_PROPS = CollisionGroups(7)
+local COLLISION_GROUP_GHOST = CollisionGroups(8)
 
 local spawners = {}
 local gameManager = {}
 local levelManager = {}
 local playerManager = {}
 local uiManager = {}
-local leaderboard = nil
 
 local gameConfig = {
 	gravity = Number3(0, -850, 0),
@@ -109,6 +110,10 @@ local gameConfig = {
 		minZoom = -250,
 		maxZoom = -100,
 		lockTranslationOnY = true,
+	},
+	ghost = {
+		followSpeed = 35, -- Vitesse de poursuite du fantôme
+		spawnHeight = 100, -- Hauteur de spawn au-dessus du joueur
 	},
 	theme = {
 		room = {
@@ -135,9 +140,6 @@ local gameConfig = {
 		defaultSpeed = 75,
 		defaultJumpHeight = 200,
 		defaultDigForce = -15000,
-		defaultAngerMax = 10, -- 10 seconds to destroy things
-		destroyGroundAngerReductionAmount = 0.175, -- Anger reduction amount when destroying ground
-		foodBonusTimeAdded = 8, -- Time added to the anger when eating food bonus
 		viewRange = 3, -- Amount of rooms to the under the player
 		floorImpactSize = Number3(2, 2, 2), -- Block to destroy on player impact
 		bumpVelocity = Number2(0, 170), -- Bump velocity when player jump on something
@@ -299,6 +301,55 @@ spawners = {
 		end, true)
 		spawners.groundParticlePool = poolSystem.create(70, spawners.createGroundParticle, true)
 	end,
+	spawnGhost = function()
+		local ghost = Shape(Items.uevoxel.ghost01)
+		ghost.Pivot = Number3(0.5, 0, 0.5)
+		ghost.CollisionGroups = COLLISION_GROUP_GHOST
+		ghost.CollidesWithGroups = COLLISION_GROUP_PLAYER
+		ghost.Physics = PhysicsMode.Trigger
+		ghost.Scale = Number3(0.8, 0.8, 0.8)
+		ghost.IsUnlit = true
+		ghost.Shadow = false
+		ghost.Rotation = Number3(0, -math.pi, 0)
+
+		-- Position initiale au-dessus du joueur
+		ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
+		ghost:SetParent(World)
+
+		-- local updatedColor = Color(color.R, color.G, color.B, obj.easeLerp)
+		-- for i = 1, #playerCloned._palette do
+		-- 	playerCloned._palette[i].Color = updatedColor
+		-- end
+
+		-- Comportement de suivi du joueur
+		ghost.Tick = function(self, dt)
+			if not gameManager._playing then
+				return
+			end
+
+			-- Calculer la direction vers le joueur
+			local direction = (Player.Position - self.Position):Normalize()
+
+			-- Déplacer le fantôme vers le joueur
+			self.Position = self.Position + direction * gameConfig.ghost.followSpeed * dt
+		end
+
+		-- Gestion de collision avec le joueur
+		ghost.OnCollisionBegin = function(self, collider)
+			if collider == Player then
+				-- Effet visuel et sonore avant de tuer le joueur
+				sfx("deathscream_3", { Position = Player.Position, Pitch = 0.8, Volume = 0.8 })
+				gameManager._cameraContainer.shake(200)
+
+				-- Tuer le joueur après un petit délai pour l'effet
+				Timer(0.1, false, function()
+					gameManager.endGame(GAME_DEAD_REASON.DAMAGE)
+				end)
+			end
+		end
+
+		return ghost
+	end,
 	randomPositionInRoom = function(paddingX, paddingY)
 		local x = math.random(-ROOM_DIMENSIONS.X / 2.0 + paddingX, ROOM_DIMENSIONS.X / 2.0 - paddingX)
 		local y = paddingY
@@ -331,7 +382,6 @@ spawners = {
 			bonus.LocalScale = Number3(0.6, 0.6, 0.6)
 			callback = function(_)
 				sfx("eating_4", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-				playerManager._anger = math.max(0, playerManager._anger - gameConfig.player.foodBonusTimeAdded)
 				gameManager.increaseStat("food", 1, bonus)
 				spawners.spawnPointsText(Player.Position + Number3(0, 25, 0), gameConfig.points.food)
 			end
@@ -485,7 +535,6 @@ spawners = {
 			npc.IsHidden = true
 			if reason == GAME_DEAD_REASON.TRAMPLED then
 				sfx("eating_1", { Position = npc.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
-				playerManager.calmDownAnger(1)
 				gameManager.increaseStat("killedEnnemies", 1, npc)
 				spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.killedEnnemies)
 
@@ -581,6 +630,7 @@ gameManager = {
 	},
 	_playing = false,
 	_music = nil,
+	_ghost = nil,
 
 	init = function()
 		ambience:set({
@@ -738,6 +788,12 @@ gameManager = {
 			destroyedGround = 0,
 		}
 
+		-- Spawner le fantôme au début du jeu
+		if gameManager._ghost then
+			gameManager._ghost:RemoveFromParent()
+		end
+		gameManager._ghost = spawners.spawnGhost()
+
 		uiManager.showHUD()
 	end,
 	endGame = function(reason)
@@ -747,6 +803,12 @@ gameManager = {
 
 		playerManager.onKilled(reason)
 		gameManager._playing = false
+
+		-- Nettoyer le fantôme
+		if gameManager._ghost then
+			gameManager._ghost:RemoveFromParent()
+			gameManager._ghost = nil
+		end
 
 		Timer(0.75, false, function()
 			uiManager.showScoreScreen()
@@ -943,7 +1005,6 @@ levelManager = {
 		floorCollider.Physics = PhysicsMode.StaticPerBlock
 		local impactPosition = impact.Block.Coordinates
 		floorCollider.room:createHoleFromBlockCoordinates(Face.Bottom, impactPosition, gameConfig.player.floorImpactSize)
-		playerManager.calmDownAnger(gameConfig.player.destroyGroundAngerReductionAmount)
 		gameManager.increaseStat("destroyedGround", 1, nil)
 	end,
 	damageProp = function(prop, damageCount)
@@ -962,7 +1023,6 @@ levelManager = {
 				stride = 5,
 			})
 			prop:RemoveFromParent()
-			playerManager.calmDownAnger(3)
 			gameManager.increaseStat("destroyedProps", 1, prop)
 			spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.destroyedProps)
 		end
@@ -1629,8 +1689,6 @@ playerManager = {
 	_life = 1,
 	_jumpHeight = gameConfig.player.defaultJumpHeight,
 	_speed = gameConfig.player.defaultSpeed,
-	_anger = 0,
-	_angerMax = gameConfig.player.defaultAngerMax,
 	_invincible = false,
 	_dashLastGhostElapsedTime = 0,
 	_dashGhostPool = nil,
@@ -1705,13 +1763,8 @@ playerManager = {
 		playerManager._diggingInvincible = false
 		playerManager._lastFloorReached = 0
 		playerManager._life = gameConfig.player.defaultLife
-		playerManager._anger = 0
-		playerManager._angerMax = gameConfig.player.defaultAngerMax
 		gameManager._cameraContainer.zoom(gameConfig.camera.defaultZoom)
 		gameConfig.camera.lockTranslationOnY = true
-	end,
-	calmDownAnger = function(value)
-		playerManager._anger = math.max(0, playerManager._anger - value)
 	end,
 	startDigging = function(diggingForce, invincible)
 		playerManager._digging = true
@@ -1751,6 +1804,9 @@ playerManager = {
 					playerManager.stopDigging()
 				end
 			end
+		elseif collider.CollisionGroups == COLLISION_GROUP_GHOST then
+			-- Le fantôme ne peut pas être affecté par le joueur - aucune action
+			return
 		elseif collider.CollisionGroups == COLLISION_GROUP_ENNEMY then
 			if playerManager._invincible or playerManager._diggingInvincible then
 				gameManager._cameraContainer.shake(750)
@@ -1839,14 +1895,6 @@ playerManager = {
 			end
 		end
 
-		if playerManager._lastFloorReached < -1 then
-			playerManager._anger = playerManager._anger + dt
-			if playerManager._anger >= playerManager._angerMax then
-				gameManager.endGame(GAME_DEAD_REASON.STARVING)
-				return
-			end
-		end
-
 		if playerManager._life <= 0 then
 			gameManager.endGame(GAME_DEAD_REASON.DAMAGE)
 			return
@@ -1870,21 +1918,7 @@ uiManager = {
 	_HUDScreen = nil,
 
 	init = function() end,
-	update = function(self, _)
-		if uiManager._HUDScreen then
-			if uiManager._angerBar then
-				local hungerRatio = math.min(1, math.max(0, 1 - (playerManager._anger / playerManager._angerMax)))
-				local maxHeight = gameConfig.theme.ui.hungerBar.height - gameConfig.theme.ui.hungerBar.padding
-				uiManager._angerBar.Height = maxHeight * hungerRatio
-
-				local startHue = gameConfig.theme.ui.hungerBar.colorHSL[1]
-				local endHue = 0
-				local lerpedHue = startHue * hungerRatio + endHue * (1 - hungerRatio)
-				local color = helpers.colors.HSLToRGB(lerpedHue, gameConfig.theme.ui.hungerBar.colorHSL[2], gameConfig.theme.ui.hungerBar.colorHSL[3])
-				uiManager._angerBar.Color = color
-			end
-		end
-	end,
+	update = function(self, _) end,
 	hideAllScreens = function()
 		if uiManager._gameOverScreen then
 			uiManager._gameOverScreen:remove()
@@ -1900,7 +1934,6 @@ uiManager = {
 		local hudBackgroundColor = gameConfig.theme.ui.backgroundColor:Copy()
 		hudBackgroundColor.A = 150
 
-		local hungerBarBackground
 		local frame = ui:createFrame(Color(0, 0, 0, 0))
 		uiManager._HUDScreen = frame
 		frame.Width = 25
@@ -1910,22 +1943,6 @@ uiManager = {
 			frame.Position = Number2(Screen.Width - frame.Width, Screen.Height * 0.5 - frame.Height * 0.5)
 		end
 
-		-- Hunger bar
-		local barPadding = gameConfig.theme.ui.hungerBar.padding
-		hungerBarBackground = ui:createFrame(hudBackgroundColor)
-		hungerBarBackground:setParent(frame)
-		hungerBarBackground.Width = gameConfig.theme.ui.hungerBar.width
-		hungerBarBackground.Height = gameConfig.theme.ui.hungerBar.height
-		hungerBarBackground.LocalPosition = Number2(0, -hungerBarBackground.Height * 0.5)
-		uiManager._angerBarBackground = hungerBarBackground
-
-		local hungerBar = ui:createFrame(gameConfig.theme.ui.hungerBar.highColor)
-		hungerBar:setParent(hungerBarBackground)
-		hungerBar.Width = gameConfig.theme.ui.hungerBar.width - barPadding
-		hungerBar.Height = gameConfig.theme.ui.hungerBar.height - barPadding
-		hungerBar.LocalPosition = Number3(barPadding * 0.5, barPadding * 0.5, 0)
-		uiManager._angerBar = hungerBar
-
 		frame:parentDidResize()
 	end,
 	showScoreScreen = function()
@@ -1933,8 +1950,6 @@ uiManager = {
 			uiManager._gameOverScreen:remove()
 			uiManager._gameOverScreen = nil
 		end
-
-		uiManager._angerBarBackground.IsHidden = true
 
 		local uiPadding = uitheme.current.padding
 		local textPadding = 10
@@ -2125,7 +2140,6 @@ uiManager = {
 			sfx("button_5", { Pitch = 1.0, Volume = 1 })
 			uiManager.hideAllScreens()
 			gameManager.startGame()
-			uiManager._angerBarBackground.IsHidden = false
 		end
 
 		local leaderboard = niceLeaderboard({
