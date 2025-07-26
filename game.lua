@@ -487,7 +487,7 @@ spawners = {
 				playerManager.calmDownAnger(1)
 				gameManager.increaseStat("killedEnnemies", 1, npc)
 				spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.killedEnnemies)
-				badge:unlockBadge("killenemy")
+				badge:unlockBadge("headstomper")
 			elseif reason == GAME_DEAD_REASON.FALL_DAMAGE then
 				sfx("hurt_scream_male_" .. math.random(1, 5), { Position = npc.Position, Pitch = 0.5 + math.random() * 0.15, Volume = 0.65 })
 			end
@@ -1601,11 +1601,12 @@ levelManager = {
 			levelManager.spawnFloors(1)
 
 			if Client.BuildNumber >= 230 and badge then
-				if playerCurrentFloor >= 1 then
-					badge:unlockBadge("firstfloor")
-				elseif playerCurrentFloor >= 50 then
+				local inverseFloor = -playerCurrentFloor
+				if inverseFloor == 0 then
+					badge:unlockBadge("firstlevel")
+				elseif inverseFloor == 50 then
 					badge:unlockBadge("tunnelvision")
-				elseif playerCurrentFloor >= 100 then
+				elseif inverseFloor == 100 then
 					badge:unlockBadge("fallingaddict")
 				end
 			end
