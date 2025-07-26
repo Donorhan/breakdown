@@ -98,6 +98,7 @@ local gameConfig = {
 	moneyProbability = 0.3,
 	bonusProbability = 0.035,
 	foodProbability = 0.01,
+	specialCoinFloorProbability = 0.025, -- 1 /50
 	bonusesRotationSpeed = 1.5 * math.pi,
 	music = "https://raw.githubusercontent.com/Donorhan/cubzh-oops-no-elevator/main/dancing-with-shadows.mp3",
 	musicVolume = 0.5,
@@ -112,11 +113,18 @@ local gameConfig = {
 		lockTranslationOnY = true,
 	},
 	ghost = {
-		followSpeed = 35, -- Vitesse de poursuite du fantôme initiale
-		maxFollowSpeed = 80, -- Vitesse maximale du fantôme
-		speedIncreasePerFloor = 3, -- Augmentation de vitesse par étage
-		spawnHeight = 100, -- Hauteur de spawn au-dessus du joueur
-		transparency = 200, -- Transparence du fantôme (0-255)
+		scale = Number3(0.6, 0.6, 0.6),
+		followSpeed = 0,
+		initialFollowSpeed = 20,
+		maxFollowSpeed = 80,
+		speedIncreasePerFloor = 1.5,
+		spawnHeight = 100,
+		transparency = 190,
+		defaultLight = {
+			radius = 25,
+			hardness = 0.25,
+			color = Color(0.9, 0.9, 0.9),
+		},
 	},
 	theme = {
 		room = {
@@ -150,8 +158,8 @@ local gameConfig = {
 		dashGhostDuration = 0.23,
 		dashGhostColor = Color(157, 157, 255, 0.9),
 		defaultLight = {
-			radius = 32,
-			hardness = 0.15,
+			radius = 35,
+			hardness = 0.2,
 			color = Color(0.9, 0.7, 0.9),
 		},
 	},
@@ -299,7 +307,7 @@ spawners = {
 	bonusesRotation = 0,
 	lastFoodSpawnedFloorCount = 0,
 	init = function()
-		spawners.coinPool = poolSystem.create(55, function()
+		spawners.coinPool = poolSystem.create(120, function() -- Augment�� pour les étages spéciaux
 			return spawners.createBonus(GAME_BONUSES.COIN)
 		end, true)
 		spawners.groundParticlePool = poolSystem.create(70, spawners.createGroundParticle, true)
@@ -310,7 +318,7 @@ spawners = {
 		ghost.CollisionGroups = COLLISION_GROUP_GHOST
 		ghost.CollidesWithGroups = COLLISION_GROUP_PLAYER
 		ghost.Physics = PhysicsMode.Trigger
-		ghost.Scale = Number3(0.8, 0.8, 0.8)
+		ghost.Scale = gameConfig.ghost.scale
 		ghost.IsUnlit = true
 		ghost.Shadow = false
 		ghost.Rotation = Number3(0, -math.pi, 0)
@@ -325,6 +333,33 @@ spawners = {
 		-- Position initiale au-dessus du joueur
 		ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
 		ghost:SetParent(World)
+
+		local l = Light()
+		l.Radius = gameConfig.ghost.defaultLight.radius
+		l.Hardness = gameConfig.ghost.defaultLight.hardness
+		l.Color = gameConfig.ghost.defaultLight.color
+		l.On = true
+		l:SetParent(ghost)
+		l.CastsShadows = true
+		l.flickerTime = 0
+		l.baseRange = 60
+		l.Tick = function(o, dt)
+			o.flickerTime = o.flickerTime + (dt / 2.5)
+
+			-- Vacillement aléatoire avec différentes fréquences
+			local flicker1 = math.sin(o.flickerTime * 15) * 0.3
+			local flicker2 = math.sin(o.flickerTime * 7.5) * 0.2
+			local flicker3 = math.sin(o.flickerTime * 23) * 0.15
+			local randomFlicker = (math.random() - 0.5) * 0.1
+
+			-- Combiner les effets de vacillement
+			local flickerIntensity = flicker1 + flicker2 + flicker3 + randomFlicker
+			flickerIntensity = math.max(-0.7, math.min(0.5, flickerIntensity)) -- Limiter l'intensité
+
+			-- Appliquer le vacillement au Range et à l'intensité
+			o.Range = o.baseRange + (flickerIntensity * 10)
+			o.Intensity = 1.0 + (flickerIntensity * 0.6)
+		end
 
 		-- Comportement de suivi du joueur
 		ghost.Tick = function(self, dt)
@@ -374,7 +409,7 @@ spawners = {
 				end
 
 				-- Lerp vers la rotation cible pour une transition fluide
-				local lerpSpeed = 3.0 * dt -- Vitesse d'interpolation
+				local lerpSpeed = 8.0 * dt -- Vitesse d'interpolation
 				local diffX = angleDifference(targetRotationX, self.Rotation.X)
 				local diffY = angleDifference(targetRotationY, self.Rotation.Y)
 
@@ -546,6 +581,23 @@ spawners = {
 					coin:SetParent(room)
 					coin.LocalPosition = Number3(x, y, 0)
 				end
+			end
+		end
+	end,
+	spawnSpecialCoinFloor = function(room)
+		local startX = -60
+		local startY = 12
+		local spacing = 11
+		local rows = 3
+		local cols = 12
+
+		for row = 0, rows - 1 do
+			for col = 0, cols - 1 do
+				local x = startX + col * spacing
+				local y = startY + row * spacing
+				local coin = spawners.coinPool:acquire()
+				coin:SetParent(room)
+				coin.LocalPosition = Number3(x, y, 0)
 			end
 		end
 	end,
@@ -836,13 +888,84 @@ gameManager = {
 			destroyedGround = 0,
 		}
 
-		-- Spawner le fantôme au début du jeu
+		-- Réinitialiser le fantôme au début du jeu
 		if gameManager._ghost then
-			gameManager._ghost.Tick = nil -- Nettoyer la fonction Tick
-			gameManager._ghost:RemoveFromParent()
-			gameManager._ghost = nil
+			-- Réinitialiser la position du fantôme
+			gameManager._ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
+			-- Réinitialiser la vitesse du fantôme à 0
+			gameConfig.ghost.followSpeed = 0
+			-- Réactiver le comportement de suivi
+			gameManager._ghost.Tick = function(self, dt)
+				if not gameManager._playing then
+					return
+				end
+
+				-- Calculer la direction vers le joueur
+				local direction = (Player.Position - self.Position):Normalize()
+
+				-- Calculer la vitesse en fonction de l'étage (plus on descend, plus c'est rapide)
+				local currentFloor = math.abs(playerManager._lastFloorReached)
+				local currentSpeed = gameConfig.ghost.followSpeed + (currentFloor * gameConfig.ghost.speedIncreasePerFloor)
+				currentSpeed = math.min(currentSpeed, gameConfig.ghost.maxFollowSpeed)
+
+				-- Déplacer le fantôme vers le joueur
+				self.Position = self.Position + direction * currentSpeed * dt
+
+				-- Rotation légère pour regarder vers le joueur tout en gardant le visage visible
+				local lookDirection = Player.Position - self.Position
+				if lookDirection.Length > 0.1 then
+					-- Calculer les angles avec des limites pour garder le visage visible
+					-- Inverser X pour corriger la direction
+					local angleY = math.atan2(-lookDirection.X, lookDirection.Z)
+					local angleX = math.atan2(-lookDirection.Y, math.sqrt(lookDirection.X ^ 2 + lookDirection.Z ^ 2))
+
+					-- Limiter les rotations pour garder le visage orienté vers la caméra
+					-- Rotation Y limitée à ±45 degrés (π/4)
+					angleY = math.max(-math.pi / 3, math.min(math.pi / 4, angleY))
+					-- Rotation X limitée à ±30 degrés (π/6) vers le bas principalement
+					angleX = math.max(-math.pi / 4, math.min(math.pi / 12, angleX))
+
+					-- Rotation cible
+					local targetRotationY = -math.pi + angleY
+					local targetRotationX = angleX
+
+					-- Fonction pour trouver la différence d'angle la plus courte
+					local function angleDifference(target, current)
+						local diff = target - current
+						while diff > math.pi do
+							diff = diff - 2 * math.pi
+						end
+						while diff < -math.pi do
+							diff = diff + 2 * math.pi
+						end
+						return diff
+					end
+
+					-- Lerp vers la rotation cible pour une transition fluide
+					local lerpSpeed = 3.0 * dt -- Vitesse d'interpolation
+					local diffX = angleDifference(targetRotationX, self.Rotation.X)
+					local diffY = angleDifference(targetRotationY, self.Rotation.Y)
+
+					self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
+				end
+			end
+			-- Réactiver la gestion de collision avec le joueur
+			gameManager._ghost.OnCollisionBegin = function(self, collider)
+				if collider == Player then
+					-- Effet visuel et sonore avant de tuer le joueur
+					sfx("deathscream_3", { Position = Player.Position, Pitch = 0.8, Volume = 0.8 })
+					gameManager._cameraContainer.shake(200)
+
+					-- Tuer le joueur après un petit délai pour l'effet
+					Timer(0.1, false, function()
+						gameManager.endGame(GAME_DEAD_REASON.DAMAGE)
+					end)
+				end
+			end
+		else
+			-- Créer le fantôme la première fois
+			gameManager._ghost = spawners.spawnGhost()
 		end
-		gameManager._ghost = spawners.spawnGhost()
 
 		uiManager.showHUD()
 	end,
@@ -854,11 +977,41 @@ gameManager = {
 		playerManager.onKilled(reason)
 		gameManager._playing = false
 
-		-- Nettoyer le fantôme
+		-- Arrêter le fantôme mais le faire regarder la caméra
 		if gameManager._ghost then
-			gameManager._ghost.Tick = nil -- Nettoyer la fonction Tick
-			gameManager._ghost:RemoveFromParent()
-			gameManager._ghost = nil
+			-- Faire regarder le fantôme vers la caméra
+			gameManager._ghost.Tick = function(self, dt)
+				-- Calculer la direction vers la caméra
+				local lookDirection = Camera.Position - self.Position
+				if lookDirection.Length > 0.1 then
+					-- Calculer les angles pour regarder la caméra
+					local angleY = math.atan2(-lookDirection.X, lookDirection.Z)
+					local angleX = math.atan2(-lookDirection.Y, math.sqrt(lookDirection.X ^ 2 + lookDirection.Z ^ 2))
+
+					-- Rotation cible vers la caméra
+					local targetRotationY = -math.pi + angleY
+					local targetRotationX = angleX
+
+					-- Fonction pour trouver la différence d'angle la plus courte
+					local function angleDifference(target, current)
+						local diff = target - current
+						while diff > math.pi do
+							diff = diff - 2 * math.pi
+						end
+						while diff < -math.pi do
+							diff = diff + 2 * math.pi
+						end
+						return diff
+					end
+
+					-- Lerp vers la rotation cible pour une transition fluide
+					local lerpSpeed = 4.0 * dt -- Vitesse d'interpolation plus lente
+					local diffX = angleDifference(targetRotationX, self.Rotation.X)
+					local diffY = angleDifference(targetRotationY, self.Rotation.Y)
+
+					self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
+				end
+			end
 		end
 
 		Timer(0.75, false, function()
@@ -1605,12 +1758,18 @@ levelManager = {
 			end
 		end
 	end,
-	addFloorBonuses = function(floor)
+	addFloorBonuses = function(floor, isSpecialCoinFloor)
+		local floorLevel = math.abs(levelManager._lastFloorSpawned)
+
+		if isSpecialCoinFloor then
+			spawners.spawnSpecialCoinFloor(floor)
+			return
+		end
+
 		if math.random() < gameConfig.moneyProbability then
 			spawners.spawnCoins(floor)
 		end
 
-		local floorLevel = math.abs(levelManager._lastFloorSpawned)
 		if floorLevel > 3 and levelManager._floorWithoutZombieCount > 1 then
 			local position = spawners.randomPositionInRoom(15, 5)
 			position.Y = 0
@@ -1663,10 +1822,19 @@ levelManager = {
 			end
 
 			-- Room dynamic content: bonuses & destructurable props
-			levelManager.addDynamicProps(floor.dynamicPropsContainer, floor.propsContainer.config)
 			if currentFloor < -1 then
-				levelManager.addFloorBonuses(floor.dynamicPropsContainer)
+				local floorLevel = math.abs(levelManager._lastFloorSpawned)
+				-- Vérifier si c'est un étage spécial de pièces
+				local isSpecialCoinFloor = (floorLevel > 10 and math.random() < gameConfig.specialCoinFloorProbability)
+
+				if not isSpecialCoinFloor then
+					-- Ajouter les props normales seulement si ce n'est pas un étage spécial
+					levelManager.addDynamicProps(floor.dynamicPropsContainer, floor.propsContainer.config)
+				end
+
+				levelManager.addFloorBonuses(floor.dynamicPropsContainer, isSpecialCoinFloor)
 			else
+				levelManager.addDynamicProps(floor.dynamicPropsContainer, floor.propsContainer.config)
 				floor.floorNumber.IsHidden = true
 			end
 
@@ -1683,7 +1851,7 @@ levelManager = {
 	removeFloor = function(floor)
 		-- Nettoyer toutes les fonctions Tick des enfants
 		hierarchyActions:applyToDescendants(floor, { includeRoot = true }, function(obj)
-			if obj.Tick then
+			if obj.Tick and not obj.poolIndex then
 				obj.Tick = nil
 			end
 		end)
@@ -1765,7 +1933,7 @@ playerManager = {
 		l.Hardness = gameConfig.player.defaultLight.hardness
 		l.Color = gameConfig.player.defaultLight.color
 		l.On = true
-		l.LocalPosition.Z = -10
+		l.LocalPosition.Z = -5
 		l.LocalPosition.Y = 5
 		l:SetParent(Player)
 		Player.light = l
@@ -1862,7 +2030,6 @@ playerManager = {
 				end
 			end
 		elseif collider.CollisionGroups == COLLISION_GROUP_GHOST then
-			-- Le fantôme ne peut pas être affecté par le joueur - aucune action
 			return
 		elseif collider.CollisionGroups == COLLISION_GROUP_ENNEMY then
 			if playerManager._invincible or playerManager._diggingInvincible then
@@ -1923,6 +2090,8 @@ playerManager = {
 	end,
 	reachedFirstFloor = function()
 		Player.Motion:Set(playerManager._speed, 0, 0)
+		-- Démarrer le fantôme quand le joueur commence à bouger
+		gameConfig.ghost.followSpeed = gameConfig.ghost.initialFollowSpeed
 	end,
 	onKilled = function(_)
 		Player.IsHidden = true
@@ -1933,6 +2102,7 @@ playerManager = {
 		sfx("deathscream_3", { Position = Player.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
 		gameManager._cameraContainer.zoom(-20)
 		gameConfig.camera.lockTranslationOnY = false
+		gameConfig.ghost.followSpeed = 0
 	end,
 	update = function(dt)
 		if not gameManager._playing then
