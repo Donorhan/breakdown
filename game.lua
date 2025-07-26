@@ -307,7 +307,7 @@ spawners = {
 	bonusesRotation = 0,
 	lastFoodSpawnedFloorCount = 0,
 	init = function()
-		spawners.coinPool = poolSystem.create(120, function() -- Augment�� pour les étages spéciaux
+		spawners.coinPool = poolSystem.create(120, function() -- Augment�������������������������������������� pour les étages spéciaux
 			return spawners.createBonus(GAME_BONUSES.COIN)
 		end, true)
 		spawners.groundParticlePool = poolSystem.create(70, spawners.createGroundParticle, true)
@@ -863,6 +863,11 @@ gameManager = {
 	end,
 	increaseStat = function(stat, amount, _obj)
 		gameManager._stats[stat] = gameManager._stats[stat] + amount
+
+		-- Mettre à jour le score en temps réel
+		if uiManager._HUDScreen and uiManager._scoreText then
+			uiManager.updateScore()
+		end
 
 		if Client.BuildNumber >= 230 and badge then
 			if stat == "coins" and gameManager._stats.coins >= 100 then
@@ -2155,22 +2160,77 @@ uiManager = {
 			uiManager._HUDScreen:remove()
 			uiManager._HUDScreen = nil
 		end
+		uiManager._scoreText = nil
+		uiManager._scoreContainer = nil
 	end,
 	showHUD = function()
-		local uiPadding = uitheme.current.padding * 2
-		local hudBackgroundColor = gameConfig.theme.ui.backgroundColor:Copy()
-		hudBackgroundColor.A = 150
-
 		local frame = ui:createFrame(Color(0, 0, 0, 0))
 		uiManager._HUDScreen = frame
-		frame.Width = 25
-		frame.Height = 50
-		frame.Position = Number2(Screen.Width - frame.Width, uiPadding)
+		frame.Width = Screen.Width
+		frame.Height = 60
+		frame.Position = Number2(0, Screen.Height - frame.Height - 5)
 		frame.parentDidResize = function(_)
-			frame.Position = Number2(Screen.Width - frame.Width, Screen.Height * 0.5 - frame.Height * 0.5)
+			frame.Position = Number2(0, Screen.Height - frame.Height - 5)
+			frame.Width = Screen.Width
 		end
 
+		-- Compteur de score en temps réel
+		local scoreContainer = ui:createFrame(gameConfig.theme.ui.backgroundColor)
+		scoreContainer:setParent(frame)
+		scoreContainer.Width = 180
+		scoreContainer.Height = 40
+		scoreContainer.Position = Number2(Screen.Width * 0.5 - scoreContainer.Width * 0.5, 10)
+		scoreContainer.parentDidResize = function()
+			scoreContainer.Position = Number2(Screen.Width * 0.5 - scoreContainer.Width * 0.5, 10)
+		end
+
+		local scoreText = ui:createText("0", Color.White, "big")
+		scoreText:setParent(scoreContainer)
+		scoreText.object.Anchor = { 0.5, 0.5 }
+		scoreText.LocalPosition = { scoreContainer.Width * 0.5, scoreContainer.Height * 0.5 }
+		scoreText.FontSize = 18
+
+		uiManager._scoreText = scoreText
+		uiManager._scoreContainer = scoreContainer
+
 		frame:parentDidResize()
+
+		-- Initialiser le score à 0
+		uiManager.updateScore()
+	end,
+	calculateCurrentScore = function()
+		-- Calculer le score actuel sans multiplication par l'étage
+		return (
+			gameManager._stats.coins * gameConfig.points.coin
+			+ gameManager._stats.food * gameConfig.points.food
+			+ gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies
+			+ gameManager._stats.destroyedProps * gameConfig.points.destroyedProps
+			+ gameManager._stats.destroyedGround * gameConfig.points.destroyedGround
+		)
+	end,
+	updateScore = function()
+		if not uiManager._scoreText then
+			return
+		end
+
+		local currentScore = uiManager.calculateCurrentScore()
+		uiManager._scoreText.Text = tostring(currentScore)
+
+		-- Animation du texte qui grossit puis revient à sa taille normale
+		if uiManager._scoreText and ease then
+			print("yes")
+			-- Annuler l'animation précédente si elle existe
+			if uiManager._scoreText.scaleAnimation then
+				ease:cancel(uiManager._scoreText.scaleAnimation)
+			end
+
+			-- Animation rapide de grossissement
+			uiManager._scoreText.object.Scale = Number3(1.4, 1.4, 1)
+
+			-- Animation de retour à la taille normale avec lerp doux
+			uiManager._scoreText.scaleAnimation = ease:outBack(uiManager._scoreText.object, 0.2)
+			uiManager._scoreText.scaleAnimation.object.Scale = Number3(1, 1, 1)
+		end
 	end,
 	showScoreScreen = function()
 		if uiManager._gameOverScreen then
