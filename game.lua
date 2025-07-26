@@ -74,7 +74,7 @@ end
 -- Configuration
 -----------------
 local GAME_BONUSES = { DIG_FAST = 1, FOOD = 2, COIN = 3 }
-local GAME_DEAD_REASON = { STARVING = 1, DAMAGE = 1, TRAMPLED = 2, FALL_DAMAGE = 3 }
+local GAME_DEAD_REASON = { STARVING = 1, DAMAGE = 2, TRAMPLED = 3, FALL_DAMAGE = 4 }
 local ROOM_DIMENSIONS = Number3(140, 62, 48)
 local COLLISION_GROUP_PLAYER = CollisionGroups(1)
 local COLLISION_GROUP_FLOOR_BELOW = CollisionGroups(2)
@@ -572,8 +572,6 @@ spawners = {
 -----------------
 gameManager = {
 	_cameraContainer = nil,
-	_money = 0,
-	_score = 0,
 	_stats = {
 		coins = 0,
 		food = 0,
@@ -1870,8 +1868,6 @@ uiManager = {
 
 	_gameOverScreen = nil,
 	_HUDScreen = nil,
-	_lifeShapes = {},
-	_previousMoneyCount = 0,
 
 	init = function() end,
 	update = function(self, _)
