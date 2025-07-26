@@ -115,7 +115,7 @@ local gameConfig = {
 	ghost = {
 		scale = Number3(0.6, 0.6, 0.6),
 		followSpeed = 0,
-		initialFollowSpeed = 20,
+		initialFollowSpeed = 30,
 		maxFollowSpeed = 80,
 		speedIncreasePerFloor = 1.5,
 		spawnHeight = 100,
@@ -2177,7 +2177,7 @@ uiManager = {
 		-- Compteur de score en temps réel
 		local scoreContainer = ui:createFrame(gameConfig.theme.ui.backgroundColor)
 		scoreContainer:setParent(frame)
-		scoreContainer.Width = 180
+		scoreContainer.Width = 110
 		scoreContainer.Height = 40
 		scoreContainer.Position = Number2(Screen.Width * 0.5 - scoreContainer.Width * 0.5, 10)
 		scoreContainer.parentDidResize = function()
@@ -2188,7 +2188,7 @@ uiManager = {
 		scoreText:setParent(scoreContainer)
 		scoreText.object.Anchor = { 0.5, 0.5 }
 		scoreText.LocalPosition = { scoreContainer.Width * 0.5, scoreContainer.Height * 0.5 }
-		scoreText.FontSize = 18
+		scoreText.FontSize = 20
 
 		uiManager._scoreText = scoreText
 		uiManager._scoreContainer = scoreContainer
@@ -2215,22 +2215,6 @@ uiManager = {
 
 		local currentScore = uiManager.calculateCurrentScore()
 		uiManager._scoreText.Text = tostring(currentScore)
-
-		-- Animation du texte qui grossit puis revient à sa taille normale
-		if uiManager._scoreText and ease then
-			print("yes")
-			-- Annuler l'animation précédente si elle existe
-			if uiManager._scoreText.scaleAnimation then
-				ease:cancel(uiManager._scoreText.scaleAnimation)
-			end
-
-			-- Animation rapide de grossissement
-			uiManager._scoreText.object.Scale = Number3(1.4, 1.4, 1)
-
-			-- Animation de retour à la taille normale avec lerp doux
-			uiManager._scoreText.scaleAnimation = ease:outBack(uiManager._scoreText.object, 0.2)
-			uiManager._scoreText.scaleAnimation.object.Scale = Number3(1, 1, 1)
-		end
 	end,
 	showScoreScreen = function()
 		if uiManager._gameOverScreen then
