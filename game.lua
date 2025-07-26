@@ -112,7 +112,9 @@ local gameConfig = {
 		lockTranslationOnY = true,
 	},
 	ghost = {
-		followSpeed = 35, -- Vitesse de poursuite du fantôme
+		followSpeed = 35, -- Vitesse de poursuite du fantôme initiale
+		maxFollowSpeed = 80, -- Vitesse maximale du fantôme
+		speedIncreasePerFloor = 3, -- Augmentation de vitesse par étage
 		spawnHeight = 100, -- Hauteur de spawn au-dessus du joueur
 		transparency = 200, -- Transparence du fantôme (0-255)
 	},
@@ -333,8 +335,13 @@ spawners = {
 			-- Calculer la direction vers le joueur
 			local direction = (Player.Position - self.Position):Normalize()
 
+			-- Calculer la vitesse en fonction de l'étage (plus on descend, plus c'est rapide)
+			local currentFloor = math.abs(playerManager._lastFloorReached)
+			local currentSpeed = gameConfig.ghost.followSpeed + (currentFloor * gameConfig.ghost.speedIncreasePerFloor)
+			currentSpeed = math.min(currentSpeed, gameConfig.ghost.maxFollowSpeed)
+
 			-- Déplacer le fantôme vers le joueur
-			self.Position = self.Position + direction * gameConfig.ghost.followSpeed * dt
+			self.Position = self.Position + direction * currentSpeed * dt
 
 			-- Rotation légère pour regarder vers le joueur tout en gardant le visage visible
 			local lookDirection = Player.Position - self.Position
