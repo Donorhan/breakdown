@@ -2070,7 +2070,7 @@ levelManager = {
 
 			if Client.BuildNumber >= 230 and badge then
 				local inverseFloor = -playerCurrentFloor
-				if inverseFloor == 1 then
+				if inverseFloor == 2 then
 					badge:unlockBadge("firstlevel")
 				elseif inverseFloor == 50 then
 					badge:unlockBadge("tunnelvision")
