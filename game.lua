@@ -14,7 +14,6 @@ Modules = {
 	roomModule = "github.com/Donorhan/cubzh-library/room-module:2ab8d15",
 	dustifyModule = "github.com/Donorhan/cubzh-library/dustify:2ab8d15",
 	helpers = "github.com/Donorhan/cubzh-library/helpers:2ab8d15",
-	skybox = "github.com/gdevillele/cubzh-modules/skybox:99d24b8",
 }
 
 Config = {
@@ -76,6 +75,7 @@ end
 -----------------
 local GAME_BONUSES = { DIG_FAST = 1, FOOD = 2, COIN = 3 }
 local GAME_DEAD_REASON = { STARVING = 1, DAMAGE = 2, TRAMPLED = 3, FALL_DAMAGE = 4 }
+local ENEMY_TYPE = { HUMAN = 1, GHOST = 2 }
 local ROOM_DIMENSIONS = Number3(140, 62, 48)
 local COLLISION_GROUP_PLAYER = CollisionGroups(1)
 local COLLISION_GROUP_FLOOR_BELOW = CollisionGroups(2)
@@ -164,10 +164,10 @@ local gameConfig = {
 	ghost = {
 		scale = Number3(0.6, 0.6, 0.6),
 		followSpeed = 0,
-		initialFollowSpeed = 30,
-		maxFollowSpeed = 80,
-		speedIncreasePerFloor = 1.5,
-		spawnHeight = 100,
+		initialFollowSpeed = 32,
+		maxFollowSpeed = 75,
+		speedIncreasePerFloor = 2,
+		spawnHeight = 50,
 		transparency = 190,
 		defaultLight = {
 			radius = 25,
@@ -193,7 +193,6 @@ local gameConfig = {
 		},
 		roomThemeCount = 10,
 		roomOffsetZ = ROOM_DIMENSIONS.Z * 0.5,
-		skybox = "https://files.cu.bzh/skyboxes/blue-sky-with-clouds-at-noon.png",
 	},
 	player = {
 		defaultLife = 1,
@@ -213,15 +212,25 @@ local gameConfig = {
 		},
 	},
 	points = {
-		food = 100,
-		destroyedGround = 1,
-		destroyedProps = 10,
-		coin = 1,
-		killedEnnemies = 25,
+		food = 500,
+		destroyedGround = 10,
+		destroyedProps = 100,
+		coin = 15,
+		killedEnnemies = 200,
 	},
 	ennemies = {
 		police = {
 			speed = 40,
+		},
+		ghost = {
+			horizontalSpeed = 30,
+			verticalSpeed = 17,
+			verticalAmplitude = 10,
+			horizontalRange = 60,
+			floatFrequency = 3,
+			rotationSpeed = 8.0,
+			squashAmplitude = 0.25,
+			squashFrequency = 10,
 		},
 	},
 	avatars = {
@@ -347,6 +356,18 @@ local spawnDashGhost = function(color, duration)
 	playerCloned.easeColor.easeLerp = 0.0
 end
 
+local applySquashEffect = function(object, time, amplitude, frequency)
+	if not object.baseScale then
+		object.baseScale = Number3(object.LocalScale.X, object.LocalScale.Y, object.LocalScale.Z)
+	end
+
+	local squashFactor = math.sin(time * frequency) * amplitude
+	local scaleY = 1.0 - squashFactor * 0.3
+	local scaleX = 1.0 + squashFactor * 0.5
+	local scaleZ = 1.0 + squashFactor * 0.3
+	object.LocalScale = Number3(object.baseScale.X * scaleX, object.baseScale.Y * scaleY, object.baseScale.Z * scaleZ)
+end
+
 -----------------
 -- Spawners
 -----------------
@@ -361,24 +382,24 @@ spawners = {
 		end, true)
 		spawners.groundParticlePool = poolSystem.create(70, spawners.createGroundParticle, true)
 	end,
-	spawnGhost = function()
+	createGhostModel = function()
 		local ghost = Shape(Items.uevoxel.ghost01)
 		ghost.Pivot = Number3(0.5, 0, 0.5)
 		ghost.CollisionGroups = COLLISION_GROUP_GHOST
 		ghost.CollidesWithGroups = COLLISION_GROUP_PLAYER
 		ghost.Physics = PhysicsMode.Trigger
-		ghost.Scale = gameConfig.ghost.scale
+		ghost.LocalScale = gameConfig.ghost.scale
 		ghost.IsUnlit = true
 		ghost.Shadow = false
 		ghost.Rotation = Number3(0, -math.pi, 0)
+
+		-- Initialiser le temps pour l'effet de squash
+		ghost.squashTime = math.random() * math.pi * 2 -- Commencer à un moment aléatoire pour varier les effets
 
 		for i = 1, #ghost.Palette do
 			local originalColor = ghost.Palette[i].Color
 			ghost.Palette[i].Color = Color(originalColor.R, originalColor.G, originalColor.B, gameConfig.ghost.transparency)
 		end
-
-		ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
-		ghost:SetParent(World)
 
 		local l = Light()
 		l.Radius = gameConfig.ghost.defaultLight.radius
@@ -404,10 +425,20 @@ spawners = {
 			o.Intensity = 1.0 + (flickerIntensity * 0.6)
 		end
 
+		return ghost
+	end,
+	spawnGhost = function()
+		local ghost = spawners.createGhostModel()
+		ghost:SetParent(World)
+		ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
+
 		ghost.Tick = function(self, dt)
 			if not gameManager._playing then
 				return
 			end
+
+			-- Mettre à jour le temps pour l'effet de squash
+			self.squashTime = self.squashTime + dt
 
 			local direction = (Player.Position - self.Position):Normalize()
 
@@ -445,6 +476,10 @@ spawners = {
 
 				self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
 			end
+
+			-- Appliquer l'effet de squash
+			local config = gameConfig.ennemies.ghost
+			applySquashEffect(self, self.squashTime, config.squashAmplitude, config.squashFrequency)
 		end
 
 		ghost.OnCollisionBegin = function(self, collider)
@@ -501,6 +536,7 @@ spawners = {
 			callback = function(coin)
 				sfx("coin_1", { Position = bonus.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
 				gameManager.increaseStat("coins", 1, bonus)
+				spawners.spawnPointsText(Player.Position + Number3(0, 25, 0), gameConfig.points.coin)
 				spawners.coinPool:release(coin)
 			end
 		end
@@ -628,7 +664,7 @@ spawners = {
 			end
 		end
 	end,
-	spawnEnnemy = function(room, position, _ennemyType)
+	spawnEnnemy = function(room, position, ennemyType)
 		local npc = MutableShape()
 		npc:AddBlock(Color(0, 0, 0, 0), 0, 0, 0)
 		npc.Pivot = Number3(0.5, 0, 0.5)
@@ -638,18 +674,140 @@ spawners = {
 		npc.Scale = Number3(8, 8, 8)
 		npc.Rotation.Y = math.pi / 2
 
-		local model = avatar:get({ usernameOrId = "fax", eyeBlinks = true, defaultAnimations = true })
+		npc.OnCollisionBegin = function(self, collider, normal) end
+
+		npc.takeDamage = function(self, collider, normal) end
+
+		local model
+		if ennemyType == ENEMY_TYPE.GHOST then
+			model = spawners.createGhostModel()
+		else
+			model = avatar:get({ usernameOrId = "nope", eyeBlinks = false, defaultAnimations = true })
+		end
+
 		model:SetParent(npc)
 		model.LocalPosition = Number3(0, 0, 0)
 		model.Physics = PhysicsMode.Disabled
-		model.LocalScale = Number3(0.5, 0.5, 0.5) / npc.Scale
-		model.Shadow = true
-		Timer(1, false, function()
-			model.Animations.Walk:Play()
-		end)
+		if ennemyType == ENEMY_TYPE.HUMAN then
+			model.LocalScale = Number3(0.5, 0.5, 0.5) / npc.Scale
+			model.Shadow = true
+			Timer(1, false, function()
+				model.Animations.Walk:Play()
+			end)
+			local direction = math.random(1, 2) == 1 and -1 or 1
+			inverseDirection(npc, direction, gameConfig.ennemies.police.speed)
 
-		local direction = math.random(1, 2) == 1 and -1 or 1
-		inverseDirection(npc, direction, gameConfig.ennemies.police.speed)
+			npc.takeDamage = function(damage, reason, _collider)
+				npc.life = npc.life - damage
+				if npc.life <= 0 then
+					npc.kill(reason)
+				else
+					helpers.shape.flash(model.Body, Color.White, 0.25)
+				end
+			end
+
+			npc.OnCollisionBegin = function(self, collider, normal)
+				if not collider:GetParent() then
+					return
+				end
+
+				if collider.CollisionGroups == COLLISION_GROUP_WALL or collider.CollisionGroups == COLLISION_GROUP_PROPS then
+					if math.abs(normal.X) > 0.5 then
+						inverseDirection(npc, nil, gameConfig.ennemies.police.speed)
+					end
+				elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW and normal.Y >= 1.0 then
+					if collider:GetParent():GetParent().id ~= self.spawnFloor then
+						self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE, collider)
+					end
+				end
+			end
+		elseif ennemyType == ENEMY_TYPE.GHOST then
+			npc.Physics = PhysicsMode.Trigger
+			npc.Scale = Number3(6, 6, 6)
+			model.LocalScale = Number3(0.7, 0.7, 0.7) / npc.Scale
+			model.Physics = PhysicsMode.Disabled
+
+			local initialDirection = math.random(1, 2) == 1 and -1 or 1
+			npc.ghostConfig = {
+				startPosition = Number3(position.X, position.Y, 0),
+				direction = initialDirection,
+				time = 0,
+				baseY = position.Y + 13,
+				targetRotationY = initialDirection > 0 and 0 or math.pi,
+				rotationSpeed = gameConfig.ennemies.ghost.rotationSpeed,
+			}
+
+			model.LocalRotation.Y = npc.ghostConfig.targetRotationY
+
+			npc.OnCollisionBegin = function(self, collider, normal)
+				if not collider:GetParent() then
+					return
+				end
+
+				if collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW and normal.Y >= 1.0 then
+					if collider:GetParent():GetParent().id ~= self.spawnFloor then
+						sfx("drumtom_1", { Position = npc.Position, Pitch = 1.0 + math.random() * 0.15, Volume = 0.65 })
+					end
+				end
+			end
+
+			npc.Tick = function(self, dt)
+				local config = gameConfig.ennemies.ghost
+				self.ghostConfig.time = self.ghostConfig.time + dt
+
+				local roomMargin = 15
+				local leftLimit = -ROOM_DIMENSIONS.X * 0.5 + roomMargin
+				local rightLimit = ROOM_DIMENSIONS.X * 0.5 - roomMargin
+
+				local newX = self.LocalPosition.X + (self.ghostConfig.direction * config.horizontalSpeed * dt)
+
+				local shouldChangeDirection = false
+				if newX <= leftLimit and self.ghostConfig.direction < 0 then
+					shouldChangeDirection = true
+					newX = leftLimit
+				elseif newX >= rightLimit and self.ghostConfig.direction > 0 then
+					shouldChangeDirection = true
+					newX = rightLimit
+				end
+
+				if shouldChangeDirection then
+					self.ghostConfig.direction = -self.ghostConfig.direction
+					if self.ghostConfig.direction > 0 then
+						self.ghostConfig.targetRotationY = 0
+						model.LocalPosition = Number3(0, -0.1, -0.9)
+						model.Pivot = Number3(0.5, 0.5, 0.5)
+					else
+						self.ghostConfig.targetRotationY = math.pi
+						model.LocalPosition = Number3(0, -0.1, 0.9)
+						model.Pivot = Number3(0.5, 0.5, 0.5)
+					end
+				end
+
+				local currentRotation = model.LocalRotation.Y
+				local targetRotation = self.ghostConfig.targetRotationY
+
+				local rotationDiff = targetRotation - currentRotation
+				if rotationDiff > math.pi then
+					rotationDiff = rotationDiff - 2 * math.pi
+				elseif rotationDiff < -math.pi then
+					rotationDiff = rotationDiff + 2 * math.pi
+				end
+
+				local rotationSpeed = self.ghostConfig.rotationSpeed * dt
+				if math.abs(rotationDiff) > 0.01 then
+					model.LocalRotation.Y = currentRotation + rotationDiff * math.min(rotationSpeed, 1.0)
+				else
+					model.LocalRotation.Y = targetRotation
+				end
+
+				local floatOffset = math.sin(self.ghostConfig.time * config.floatFrequency) * config.verticalAmplitude
+				self.LocalPosition = Number3(newX, self.ghostConfig.baseY + floatOffset, 0)
+
+				-- Appliquer l'effet de squash au modèle
+				applySquashEffect(model, self.ghostConfig.time, config.squashAmplitude, config.squashFrequency)
+			end
+		end
+
 		npc.kill = function(reason)
 			npc.Physics = PhysicsMode.Disabled
 			dustifyModule.dustify(npc, {
@@ -674,31 +832,6 @@ spawners = {
 
 			npc:RemoveFromParent()
 			gameManager._cameraContainer.shake(10)
-		end
-
-		npc.takeDamage = function(damage, reason, _collider)
-			npc.life = npc.life - damage
-			if npc.life <= 0 then
-				npc.kill(reason)
-			else
-				helpers.shape.flash(model.Body, Color.White, 0.25)
-			end
-		end
-
-		npc.OnCollisionBegin = function(self, collider, normal)
-			if not collider:GetParent() then
-				return
-			end
-
-			if collider.CollisionGroups == COLLISION_GROUP_WALL or collider.CollisionGroups == COLLISION_GROUP_PROPS then
-				if math.abs(normal.X) > 0.5 then
-					inverseDirection(npc, nil, gameConfig.ennemies.police.speed)
-				end
-			elseif collider.CollisionGroups == COLLISION_GROUP_FLOOR_BELOW and normal.Y >= 1.0 then
-				if collider:GetParent():GetParent().id ~= self.spawnFloor then
-					self.takeDamage(self.life + 1, GAME_DEAD_REASON.FALL_DAMAGE, collider)
-				end
-			end
 		end
 
 		npc:SetParent(room)
@@ -761,20 +894,26 @@ gameManager = {
 	init = function()
 		ambience:set({
 			sky = {
-				skyColor = Color(255, 168, 255),
-				horizonColor = Color(213, 144, 201),
-				abyssColor = Color(76, 144, 255),
-				lightColor = Color(101, 147, 175),
-				lightIntensity = 0.820000,
+				skyColor = Color(10, 10, 20), -- Haut du niveau (le plus sombre)
+				horizonColor = Color(25, 20, 35), -- Centre de l’écran (transition douce)
+				abyssColor = Color(40, 35, 50), -- Bas du niveau (légèrement plus clair)
+				lightColor = Color(180, 120, 100), -- Lumière chaude, moins saturée
+				lightIntensity = 0.4,
+			},
+			fog = {
+				color = Color(25, 20, 30), -- Brume discrète
+				near = 280,
+				far = 650,
+				lightAbsorbtion = 0.35,
 			},
 			sun = {
-				color = Color(245, 227, 194),
-				intensity = 0.900000,
-				rotation = Number3(1.0061164, 0.865181, 0.000000), -- rotation = Number3(1.061164, 3.665181, 0.000000),
+				color = Color(220, 150, 120), -- Éclairage doux
+				intensity = 0.85,
+				rotation = Rotation(math.rad(18), math.rad(50), 0),
 			},
 			ambient = {
-				skyLightFactor = 0.070000,
-				dirLightFactor = 0.220000,
+				skyLightFactor = 0.08,
+				dirLightFactor = 0.28,
 			},
 		})
 		gameManager.initCamera()
@@ -923,9 +1062,7 @@ gameManager = {
 			gameManager._ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
 			gameConfig.ghost.followSpeed = 0
 			gameManager._ghost.Tick = function(self, dt)
-				if not gameManager._playing then
-					return
-				end
+				self.squashTime = self.squashTime + dt
 
 				local direction = (Player.Position - self.Position):Normalize()
 
@@ -962,6 +1099,10 @@ gameManager = {
 
 					self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
 				end
+
+				-- Appliquer l'effet de squash
+				local config = gameConfig.ennemies.ghost
+				applySquashEffect(self, self.squashTime, config.squashAmplitude, config.squashFrequency)
 			end
 			gameManager._ghost.OnCollisionBegin = function(self, collider)
 				if collider == Player then
@@ -987,22 +1128,18 @@ gameManager = {
 		playerManager.onKilled(reason)
 		gameManager._playing = false
 
-		-- Arrêter le fantôme mais le faire regarder la caméra
 		if gameManager._ghost then
-			-- Faire regarder le fantôme vers la caméra
 			gameManager._ghost.Tick = function(self, dt)
-				-- Calculer la direction vers la caméra
+				self.squashTime = self.squashTime + dt
+
 				local lookDirection = Camera.Position - self.Position
 				if lookDirection.Length > 0.1 then
-					-- Calculer les angles pour regarder la caméra
 					local angleY = math.atan2(-lookDirection.X, lookDirection.Z)
 					local angleX = math.atan2(-lookDirection.Y, math.sqrt(lookDirection.X ^ 2 + lookDirection.Z ^ 2))
 
-					-- Rotation cible vers la caméra
 					local targetRotationY = -math.pi + angleY
 					local targetRotationX = angleX
 
-					-- Fonction pour trouver la différence d'angle la plus courte
 					local function angleDifference(target, current)
 						local diff = target - current
 						while diff > math.pi do
@@ -1014,18 +1151,27 @@ gameManager = {
 						return diff
 					end
 
-					-- Lerp vers la rotation cible pour une transition fluide
-					local lerpSpeed = 4.0 * dt -- Vitesse d'interpolation plus lente
+					local lerpSpeed = 4.0 * dt
 					local diffX = angleDifference(targetRotationX, self.Rotation.X)
 					local diffY = angleDifference(targetRotationY, self.Rotation.Y)
 
 					self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
 				end
+
+				local config = gameConfig.ennemies.ghost
+				applySquashEffect(self, self.squashTime, config.squashAmplitude, config.squashFrequency)
 			end
 		end
 
 		Timer(0.75, false, function()
-			uiManager.showScoreScreen()
+			local totalScore = (
+				gameManager._stats.coins
+				+ gameManager._stats.food * gameConfig.points.food
+				+ gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies
+				+ gameManager._stats.destroyedProps * gameConfig.points.destroyedProps
+			)
+
+			uiManager.showLeaderboardScreen(totalScore, gameManager._stats.floorReached)
 		end)
 	end,
 }
@@ -1045,13 +1191,6 @@ levelManager = {
 
 	init = function()
 		levelManager._floors = fifo()
-
-		skybox.load({ url = gameConfig.theme.skybox }, function(obj)
-			obj:SetParent(Camera)
-			obj.Tick = function(self)
-				self.Position = Camera.Position - Number3(self.Scale.X, self.Scale.Y, -self.Scale.Z) / 2
-			end
-		end)
 
 		levelManager._roofTop = levelManager.generateRoom(true, -1)
 
@@ -1240,7 +1379,9 @@ levelManager = {
 			end
 			helpers.shape.flash(prop, prop.damageColor or Color.White, 0.25)
 		else
-			sfx(prop.destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.5, Volume = 0.55 })
+			if prop.destroySound then
+				sfx(prop.destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.5, Volume = 0.55 })
+			end
 			levelManager.unregisterPulseableProp(prop)
 			dustifyModule.dustify(prop, {
 				collisionGroups = COLLISION_GROUP_PARTICLES,
@@ -1605,7 +1746,7 @@ levelManager = {
 	addDynamicProps = function(propsContainer, config)
 		if config == 1 then
 			local prop = Shape(Items.claire.office_cabinet)
-			levelManager.prepareProp(propsContainer, prop, "hitmarker_2", "gun_shot_2", true)
+			levelManager.prepareProp(propsContainer, prop, "small_explosion_2", "small_explosion_2", true)
 			prop.Scale = Number3(0.6, 0.6, 0.6)
 			prop.LocalRotation.Y = 0
 			prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Width * 0.5 - 4, prop.Height * 0.5 - 5, 0)
@@ -1761,7 +1902,7 @@ levelManager = {
 			prop.life = 0
 
 			prop = Shape(Items.voxels.open_upright_piano)
-			levelManager.prepareProp(propsContainer, prop, "piano_attack", "piano_attack", true)
+			levelManager.prepareProp(propsContainer, prop, "small_explosion_2", "small_explosion_2", true)
 			prop.life = 0
 			prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Depth * 0.5 - 6, prop.Height * 0.5 - 16, 0)
 			prop.Scale = Number3(0.5, 0.5, 0.5)
@@ -1805,7 +1946,11 @@ levelManager = {
 		if floorLevel > 3 and levelManager._floorWithoutZombieCount > 1 then
 			local position = spawners.randomPositionInRoom(15, 5)
 			position.Y = 0
-			spawners.spawnEnnemy(floor, position)
+			if math.random() < 0.65 then
+				spawners.spawnEnnemy(floor, position, ENEMY_TYPE.GHOST)
+			else
+				spawners.spawnEnnemy(floor, position, ENEMY_TYPE.HUMAN)
+			end
 			levelManager._floorWithoutZombieCount = 0
 		else
 			levelManager._floorWithoutZombieCount = levelManager._floorWithoutZombieCount + 1
@@ -1853,14 +1998,11 @@ levelManager = {
 				floor.structure.walls[Face.Bottom].paintShape.Physics = false
 			end
 
-			-- Room dynamic content: bonuses & destructurable props
 			if currentFloor < -1 then
 				local floorLevel = math.abs(levelManager._lastFloorSpawned)
-				-- Vérifier si c'est un étage spécial de pièces
 				local isSpecialCoinFloor = (floorLevel > 10 and math.random() < gameConfig.specialCoinFloorProbability)
 
 				if not isSpecialCoinFloor then
-					-- Ajouter les props normales seulement si ce n'est pas un étage spécial
 					levelManager.addDynamicProps(floor.dynamicPropsContainer, floor.propsContainer.config)
 				end
 
@@ -1928,7 +2070,7 @@ levelManager = {
 
 			if Client.BuildNumber >= 230 and badge then
 				local inverseFloor = -playerCurrentFloor
-				if inverseFloor == 0 then
+				if inverseFloor == 1 then
 					badge:unlockBadge("firstlevel")
 				elseif inverseFloor == 50 then
 					badge:unlockBadge("tunnelvision")
@@ -2067,7 +2209,12 @@ playerManager = {
 				end
 			end
 		elseif collider.CollisionGroups == COLLISION_GROUP_GHOST then
-			return
+			sfx("drumtom_1", {
+				Position = Player.Position,
+				Volume = 0.3,
+				Pitch = 0.4 + math.random() * 0.2,
+				Spatialized = true,
+			})
 		elseif collider.CollisionGroups == COLLISION_GROUP_ENNEMY then
 			if playerManager._invincible or playerManager._diggingInvincible then
 				gameManager._cameraContainer.shake(750)
@@ -2247,165 +2394,6 @@ uiManager = {
 		local currentScore = uiManager.calculateCurrentScore()
 		uiManager._scoreText.Text = tostring(currentScore)
 	end,
-	showScoreScreen = function()
-		if uiManager._gameOverScreen then
-			uiManager._gameOverScreen:remove()
-			uiManager._gameOverScreen = nil
-		end
-
-		local uiPadding = uitheme.current.padding
-		local textPadding = 10
-
-		local frame = ui:createFrame(gameConfig.theme.ui.backgroundColor)
-		uiManager._gameOverScreen = frame
-
-		frame.Width = 400
-		frame.Height = 400
-		frame.parentDidResize = function()
-			if Client.IsMobile then
-				frame.Width = Screen.Width - uiPadding * 4
-				frame.LocalPosition = Number2(uiPadding * 2, Screen.Height / 2 - frame.Height / 2 - Screen.SafeArea.Top)
-			else
-				frame.LocalPosition = { Screen.Width / 2 - frame.Width / 2, Screen.Height / 2 - frame.Height / 2 - Screen.SafeArea.Top }
-			end
-		end
-		frame:parentDidResize()
-
-		-- Score details
-		local floorReached = math.abs(playerManager._lastFloorReached) - 1
-
-		local totalScore = (
-			gameManager._stats.coins
-			+ gameManager._stats.food * gameConfig.points.food
-			+ gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies
-			+ gameManager._stats.destroyedProps * gameConfig.points.destroyedProps
-		) * floorReached
-
-		if floorReached > 35 then
-			sfx("crowdapplause_1", { Pitch = 1.0, Volume = 0.45 })
-		end
-
-		-- Save score to leaderboard
-		leaderboard:set({
-			score = totalScore,
-			value = { totalScore = totalScore, floorReached = floorReached },
-		})
-
-		-- Title
-		local titleText = ui:createText("Game Over!", Color.White, "big")
-		titleText:setParent(frame)
-		titleText.object.Anchor = { 0.5, 0 }
-		titleText.LocalPosition = { frame.Width * 0.5, frame.Height - titleText.Height - uiPadding * 4 }
-
-		-- Score details container
-		local lineHeight = 36
-		local linePadding = 4
-		local lineColor = Color(255, 255, 255, 50)
-		local detailsContainer = ui:createFrame(Color(0, 0, 0, 0))
-		local darkTextColor = Color(32, 37, 48, 255)
-		detailsContainer:setParent(frame)
-		detailsContainer.Width = frame.Width - uiPadding * 4
-		detailsContainer.Height = (lineHeight + linePadding) * 4 - linePadding
-		detailsContainer.LocalPosition = { uiPadding * 2, titleText.LocalPosition.Y - detailsContainer.Height - uiPadding - 20 }
-
-		-- Stats details
-		local createStatLine = function(text, value, y, delay)
-			Timer(delay, false, function()
-				local statFrame = ui:createFrame(lineColor)
-				statFrame:setParent(detailsContainer)
-				statFrame.Width = detailsContainer.Width
-				statFrame.Height = lineHeight
-				statFrame.LocalPosition = { 0, y }
-
-				local statText = ui:createText(text, Color.White, "small")
-				statText:setParent(statFrame)
-				statText.LocalPosition = { 8, statFrame.Height * 0.5 - statText.Height * 0.5 }
-
-				local valueText = ui:createText(tostring(value), Color.White, "small")
-				valueText:setParent(statFrame)
-				valueText.object.Anchor = { 1, 0 }
-				valueText.LocalPosition = { statFrame.Width - 8, statFrame.Height * 0.5 - valueText.Height * 0.5 }
-
-				sfx("buttonpositive_2", { Pitch = 1.0 + delay, Volume = 0.65 })
-			end)
-		end
-
-		createStatLine("Props destroyed", gameManager._stats.destroyedProps * gameConfig.points.destroyedProps, (lineHeight + linePadding) * 3, 0.4)
-		createStatLine("Enemies defeated", gameManager._stats.killedEnnemies * gameConfig.points.killedEnnemies, (lineHeight + linePadding) * 2, 0.7)
-		createStatLine("Food eaten", gameManager._stats.food * gameConfig.points.food, lineHeight + linePadding, 1.0)
-		createStatLine("Coins collected", gameManager._stats.coins, 0, 1.3)
-
-		local floorContainer
-		Timer(1.6, false, function()
-			floorContainer = ui:createFrame(Color(227, 208, 129))
-			floorContainer:setParent(frame)
-			floorContainer.Width = frame.Width - uiPadding * 4
-			floorContainer.Height = lineHeight
-			floorContainer.LocalPosition = { uiPadding * 2, detailsContainer.LocalPosition.Y - floorContainer.Height - uiPadding }
-
-			local floorText = ui:createText("Floor reached", Color.White, "small")
-			floorText:setParent(floorContainer)
-			floorText.LocalPosition = { textPadding, floorContainer.Height * 0.5 - floorText.Height * 0.5 }
-			floorText.Color = darkTextColor
-
-			local floorValue = ui:createText("×" .. tostring(floorReached), Color.White, "small")
-			floorValue:setParent(floorContainer)
-			floorValue.object.Anchor = { 1, 0 }
-			floorValue.LocalPosition = { floorContainer.Width - textPadding, floorContainer.Height * 0.5 - floorValue.Height * 0.5 }
-			floorValue.Color = darkTextColor
-
-			sfx("buttonpositive_3", { Pitch = 1.0, Volume = 0.65 })
-		end)
-
-		-- Total score
-		local nextButton
-		Timer(2.1, false, function()
-			local totalScoreContainer = ui:createFrame(Color(0, 0, 0, 0))
-			totalScoreContainer:setParent(frame)
-			totalScoreContainer.Width = frame.Width - uiPadding * 4
-			totalScoreContainer.Height = lineHeight
-			totalScoreContainer.LocalPosition = { uiPadding * 2, uiPadding }
-
-			local scoreTitle = ui:createText("Total Score", Color.White, "default")
-			scoreTitle:setParent(totalScoreContainer)
-			scoreTitle.object.Anchor = { 0, 0.5 }
-			scoreTitle.LocalPosition = { textPadding, totalScoreContainer.Height * 0.5 }
-
-			local scoreValue = ui:createText(tostring(totalScore), Color.White, "big")
-			scoreValue:setParent(totalScoreContainer)
-			scoreValue.object.Anchor = { 1, 0.5 }
-			scoreValue.LocalPosition = { totalScoreContainer.Width - textPadding, totalScoreContainer.Height * 0.5 }
-
-			sfx("buttonnegative_1", { Pitch = 0.8, Volume = 0.65 })
-			if Client.BuildNumber >= 230 and badge and totalScore >= 50000 then
-				badge:unlockBadge("fingerworkout")
-			end
-			nextButton.IsHidden = false
-		end)
-
-		-- Buttons container
-		local buttonsContainer = ui:createFrame(Color(0, 0, 0, 0))
-		buttonsContainer:setParent(frame)
-		buttonsContainer.Width = frame.Width
-		buttonsContainer.Height = 40
-		buttonsContainer.LocalPosition = { 0, -buttonsContainer.Height - uiPadding }
-
-		-- Next button (to leaderboard)
-		nextButton = ui:createButton("Show leaderboard")
-		nextButton.Width = buttonsContainer.Width
-		nextButton.Height = buttonsContainer.Height
-		nextButton:setColor(Color(70, 129, 244), Color.White)
-		nextButton:setParent(buttonsContainer)
-		nextButton.IsHidden = true
-		nextButton.onRelease = function()
-			if uiManager._gameOverScreen.IsHidden or nextButton.IsHidden then
-				return
-			end
-
-			sfx("button_5", { Pitch = 1.0, Volume = 1 })
-			uiManager.showLeaderboardScreen(totalScore, floorReached)
-		end
-	end,
 	showLeaderboardScreen = function(totalScore, floorReached)
 		if uiManager._gameOverScreen then
 			uiManager._gameOverScreen:remove()
@@ -2471,6 +2459,7 @@ Client.OnStart = function()
 	Screen.Orientation = "portrait"
 	Config.ConstantAcceleration = gameConfig.gravity
 	Dev.DisplayColliders = false
+	Clouds.On = false
 
 	-- Disable the default controls
 	Client.DirectionalPad = nil
