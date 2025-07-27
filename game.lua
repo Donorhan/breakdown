@@ -92,6 +92,55 @@ local levelManager = {}
 local playerManager = {}
 local uiManager = {}
 
+local activeFlashes = {}
+
+local flashOpti = function(shape, color, duration)
+	if not shape.originalPalette then
+		shape.originalPalette = shape.Palette:Copy()
+	end
+
+	-- Nettoyer l'animation précédente
+	if shape.flashId and activeFlashes[shape.flashId] then
+		activeFlashes[shape.flashId] = nil
+	end
+
+	local flashId = tostring(shape) .. "_" .. os.clock()
+	shape.flashId = flashId
+
+	activeFlashes[flashId] = {
+		shape = shape,
+		color = color,
+		startTime = os.clock(),
+		duration = duration,
+		originalPalette = shape.originalPalette,
+	}
+end
+
+-- Fonction globale à appeler dans Client.Tick
+local updateFlashes = function(dt)
+	local currentTime = os.clock()
+
+	for flashId, flash in pairs(activeFlashes) do
+		local elapsed = currentTime - flash.startTime
+		local progress = math.min(elapsed / flash.duration, 1.0)
+
+		if flash.shape and flash.shape.Palette then
+			for i = 1, #flash.shape.Palette do
+				flash.shape.Palette[i].Color:Lerp(flash.color, flash.originalPalette[i].Color, progress)
+			end
+
+			-- Animation terminée
+			if progress >= 1.0 then
+				flash.shape.Palette = flash.originalPalette:Copy()
+				activeFlashes[flashId] = nil
+			end
+		else
+			-- Shape supprimé, nettoyer
+			activeFlashes[flashId] = nil
+		end
+	end
+end
+
 local gameConfig = {
 	gravity = Number3(0, -850, 0),
 	floorInMemoryMax = 8,
@@ -100,7 +149,7 @@ local gameConfig = {
 	foodProbability = 0.01,
 	specialCoinFloorProbability = 0.025, -- 1 /50
 	bonusesRotationSpeed = 1.5 * math.pi,
-	music = "https://raw.githubusercontent.com/Donorhan/cubzh-oops-no-elevator/main/dancing-with-shadows.mp3",
+	music = "https://raw.githubusercontent.com/Donorhan/cubzh-oops-no-elevator/main/spooky-shadows.mp3",
 	musicVolume = 0.5,
 	leaderboardName = "no-elevator",
 	camera = {
@@ -307,7 +356,7 @@ spawners = {
 	bonusesRotation = 0,
 	lastFoodSpawnedFloorCount = 0,
 	init = function()
-		spawners.coinPool = poolSystem.create(120, function() -- Augment�������������������������������������� pour les étages spéciaux
+		spawners.coinPool = poolSystem.create(120, function()
 			return spawners.createBonus(GAME_BONUSES.COIN)
 		end, true)
 		spawners.groundParticlePool = poolSystem.create(70, spawners.createGroundParticle, true)
@@ -323,14 +372,11 @@ spawners = {
 		ghost.Shadow = false
 		ghost.Rotation = Number3(0, -math.pi, 0)
 
-		-- Rendre le fantôme translucide
 		for i = 1, #ghost.Palette do
 			local originalColor = ghost.Palette[i].Color
-			-- Garder les couleurs originales mais avec 50% de transparence
 			ghost.Palette[i].Color = Color(originalColor.R, originalColor.G, originalColor.B, gameConfig.ghost.transparency)
 		end
 
-		-- Position initiale au-dessus du joueur
 		ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
 		ghost:SetParent(World)
 
@@ -346,57 +392,43 @@ spawners = {
 		l.Tick = function(o, dt)
 			o.flickerTime = o.flickerTime + (dt / 2.5)
 
-			-- Vacillement aléatoire avec différentes fréquences
 			local flicker1 = math.sin(o.flickerTime * 15) * 0.3
 			local flicker2 = math.sin(o.flickerTime * 7.5) * 0.2
 			local flicker3 = math.sin(o.flickerTime * 23) * 0.15
 			local randomFlicker = (math.random() - 0.5) * 0.1
 
-			-- Combiner les effets de vacillement
 			local flickerIntensity = flicker1 + flicker2 + flicker3 + randomFlicker
-			flickerIntensity = math.max(-0.7, math.min(0.5, flickerIntensity)) -- Limiter l'intensité
+			flickerIntensity = math.max(-0.7, math.min(0.5, flickerIntensity))
 
-			-- Appliquer le vacillement au Range et à l'intensité
 			o.Range = o.baseRange + (flickerIntensity * 10)
 			o.Intensity = 1.0 + (flickerIntensity * 0.6)
 		end
 
-		-- Comportement de suivi du joueur
 		ghost.Tick = function(self, dt)
 			if not gameManager._playing then
 				return
 			end
 
-			-- Calculer la direction vers le joueur
 			local direction = (Player.Position - self.Position):Normalize()
 
-			-- Calculer la vitesse en fonction de l'étage (plus on descend, plus c'est rapide)
 			local currentFloor = math.abs(playerManager._lastFloorReached)
 			local currentSpeed = gameConfig.ghost.followSpeed + (currentFloor * gameConfig.ghost.speedIncreasePerFloor)
 			currentSpeed = math.min(currentSpeed, gameConfig.ghost.maxFollowSpeed)
 
-			-- Déplacer le fantôme vers le joueur
 			self.Position = self.Position + direction * currentSpeed * dt
 
-			-- Rotation légère pour regarder vers le joueur tout en gardant le visage visible
 			local lookDirection = Player.Position - self.Position
 			if lookDirection.Length > 0.1 then
-				-- Calculer les angles avec des limites pour garder le visage visible
-				-- Inverser X pour corriger la direction
 				local angleY = math.atan2(-lookDirection.X, lookDirection.Z)
 				local angleX = math.atan2(-lookDirection.Y, math.sqrt(lookDirection.X ^ 2 + lookDirection.Z ^ 2))
 
-				-- Limiter les rotations pour garder le visage orienté vers la caméra
-				-- Rotation Y limitée à ±45 degrés (π/4)
 				angleY = math.max(-math.pi / 3, math.min(math.pi / 4, angleY))
-				-- Rotation X limitée à ±30 degrés (π/6) vers le bas principalement
 				angleX = math.max(-math.pi / 4, math.min(math.pi / 12, angleX))
 
 				-- Rotation cible
 				local targetRotationY = -math.pi + angleY
 				local targetRotationX = angleX
 
-				-- Fonction pour trouver la différence d'angle la plus courte
 				local function angleDifference(target, current)
 					local diff = target - current
 					while diff > math.pi do
@@ -407,9 +439,7 @@ spawners = {
 					end
 					return diff
 				end
-
-				-- Lerp vers la rotation cible pour une transition fluide
-				local lerpSpeed = 8.0 * dt -- Vitesse d'interpolation
+				local lerpSpeed = 8.0 * dt
 				local diffX = angleDifference(targetRotationX, self.Rotation.X)
 				local diffY = angleDifference(targetRotationY, self.Rotation.Y)
 
@@ -417,14 +447,11 @@ spawners = {
 			end
 		end
 
-		-- Gestion de collision avec le joueur
 		ghost.OnCollisionBegin = function(self, collider)
 			if collider == Player then
-				-- Effet visuel et sonore avant de tuer le joueur
 				sfx("deathscream_3", { Position = Player.Position, Pitch = 0.8, Volume = 0.8 })
 				gameManager._cameraContainer.shake(200)
 
-				-- Tuer le joueur après un petit délai pour l'effet
 				Timer(0.1, false, function()
 					gameManager.endGame(GAME_DEAD_REASON.DAMAGE)
 				end)
@@ -695,7 +722,6 @@ spawners = {
 		pcube.Velocity.Y = math.random(30, 50)
 		pcube.Velocity.X = math.random(-50, 50)
 
-		-- Need to remove block before adding, or pcube colors wrap around
 		local oldblock = pcube:GetBlock(0, 0, 0)
 		if oldblock ~= nil then
 			oldblock.Color = color
@@ -893,48 +919,32 @@ gameManager = {
 			destroyedGround = 0,
 		}
 
-		-- Réinitialiser le fantôme au début du jeu
 		if gameManager._ghost then
-			-- Réinitialiser la position du fantôme
 			gameManager._ghost.Position = Player.Position + Number3(0, gameConfig.ghost.spawnHeight, 0)
-			-- Réinitialiser la vitesse du fantôme à 0
 			gameConfig.ghost.followSpeed = 0
-			-- Réactiver le comportement de suivi
 			gameManager._ghost.Tick = function(self, dt)
 				if not gameManager._playing then
 					return
 				end
 
-				-- Calculer la direction vers le joueur
 				local direction = (Player.Position - self.Position):Normalize()
 
-				-- Calculer la vitesse en fonction de l'étage (plus on descend, plus c'est rapide)
 				local currentFloor = math.abs(playerManager._lastFloorReached)
 				local currentSpeed = gameConfig.ghost.followSpeed + (currentFloor * gameConfig.ghost.speedIncreasePerFloor)
 				currentSpeed = math.min(currentSpeed, gameConfig.ghost.maxFollowSpeed)
 
-				-- Déplacer le fantôme vers le joueur
 				self.Position = self.Position + direction * currentSpeed * dt
 
-				-- Rotation légère pour regarder vers le joueur tout en gardant le visage visible
 				local lookDirection = Player.Position - self.Position
 				if lookDirection.Length > 0.1 then
-					-- Calculer les angles avec des limites pour garder le visage visible
-					-- Inverser X pour corriger la direction
 					local angleY = math.atan2(-lookDirection.X, lookDirection.Z)
 					local angleX = math.atan2(-lookDirection.Y, math.sqrt(lookDirection.X ^ 2 + lookDirection.Z ^ 2))
 
-					-- Limiter les rotations pour garder le visage orienté vers la caméra
-					-- Rotation Y limitée à ±45 degrés (π/4)
 					angleY = math.max(-math.pi / 3, math.min(math.pi / 4, angleY))
-					-- Rotation X limitée à ±30 degrés (π/6) vers le bas principalement
 					angleX = math.max(-math.pi / 4, math.min(math.pi / 12, angleX))
-
-					-- Rotation cible
 					local targetRotationY = -math.pi + angleY
 					local targetRotationX = angleX
 
-					-- Fonction pour trouver la différence d'angle la plus courte
 					local function angleDifference(target, current)
 						local diff = target - current
 						while diff > math.pi do
@@ -946,29 +956,24 @@ gameManager = {
 						return diff
 					end
 
-					-- Lerp vers la rotation cible pour une transition fluide
-					local lerpSpeed = 3.0 * dt -- Vitesse d'interpolation
+					local lerpSpeed = 3.0 * dt
 					local diffX = angleDifference(targetRotationX, self.Rotation.X)
 					local diffY = angleDifference(targetRotationY, self.Rotation.Y)
 
 					self.Rotation = Number3(self.Rotation.X + diffX * lerpSpeed, self.Rotation.Y + diffY * lerpSpeed, 0)
 				end
 			end
-			-- Réactiver la gestion de collision avec le joueur
 			gameManager._ghost.OnCollisionBegin = function(self, collider)
 				if collider == Player then
-					-- Effet visuel et sonore avant de tuer le joueur
 					sfx("deathscream_3", { Position = Player.Position, Pitch = 0.8, Volume = 0.8 })
 					gameManager._cameraContainer.shake(200)
 
-					-- Tuer le joueur après un petit délai pour l'effet
 					Timer(0.1, false, function()
 						gameManager.endGame(GAME_DEAD_REASON.DAMAGE)
 					end)
 				end
 			end
 		else
-			-- Créer le fantôme la première fois
 			gameManager._ghost = spawners.spawnGhost()
 		end
 
@@ -1036,6 +1041,7 @@ levelManager = {
 	_lastRoomConfigs = {}, -- Used to avoid same rooms in a row
 	_roofTop = nil,
 	_roomsPool = nil,
+	_pulseableProps = {},
 
 	init = function()
 		levelManager._floors = fifo()
@@ -1059,6 +1065,15 @@ levelManager = {
 
 			return levelManager.generateRoom(false, poolRoomConfig)
 		end, true)
+
+		local flashColor = Color(220, 220, 220, 0.25)
+		Timer(1.5, true, function()
+			for _, prop in ipairs(levelManager._pulseableProps) do
+				hierarchyActions:applyToDescendants(prop, { includeRoot = true }, function(o)
+					flashOpti(o, flashColor, 0.35)
+				end)
+			end
+		end)
 	end,
 	currentFloor = function(positionY)
 		return math.floor(positionY / ROOM_DIMENSIONS.Y)
@@ -1082,6 +1097,7 @@ levelManager = {
 	reset = function()
 		levelManager.removeFloors(#levelManager._floors)
 		levelManager._floors:flush()
+		levelManager._pulseableProps = {}
 		levelManager._lastFloorSpawned = 0
 		levelManager._totalFloorSpawned = 0
 		levelManager._roomsPool:releaseAll()
@@ -1219,22 +1235,30 @@ levelManager = {
 	damageProp = function(prop, damageCount)
 		prop.life = prop.life - (damageCount or 1)
 		if prop.life > 0 then
-			local soundDamage = prop.soundDamage or "punch_1"
-			sfx(soundDamage, { Position = prop.Position, Pitch = 0.8 + math.random() * 0.1, Volume = 0.55 })
+			if prop.soundDamage then
+				sfx(prop.soundDamage, { Position = prop.Position, Pitch = 0.8 + math.random() * 0.1, Volume = 0.55 })
+			end
 			helpers.shape.flash(prop, prop.damageColor or Color.White, 0.25)
 		else
-			local destroySound = prop.destroySound or "gun_shot_2"
-			sfx(destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.1, Volume = 0.55 })
+			sfx(prop.destroySound, { Position = prop.Position, Pitch = 1.0 + math.random() * 0.5, Volume = 0.55 })
+			levelManager.unregisterPulseableProp(prop)
 			dustifyModule.dustify(prop, {
 				collisionGroups = COLLISION_GROUP_PARTICLES,
 				collidesWithGroups = COLLISION_GROUP_FLOOR_BELOW + COLLISION_GROUP_WALL,
-				bounciness = 0.15,
+				bounciness = 0.25,
 				stride = 5,
 			})
 			prop:RemoveFromParent()
 			gameManager.increaseStat("destroyedProps", 1, prop)
 			spawners.spawnPointsText(Player.Position + Number3(0, 20, 0), gameConfig.points.destroyedProps)
 		end
+	end,
+	registerPulseableProp = function(prop)
+		table.insert(levelManager._pulseableProps, prop)
+		prop.isPulseable = true
+	end,
+	unregisterPulseableProp = function(prop)
+		levelManager._pulseableProps[prop] = nil
 	end,
 	prepareProp = function(floor, prop, soundDamage, destroySound, collide, disableShadow)
 		prop.life = 1
@@ -1246,6 +1270,9 @@ levelManager = {
 			prop.lifeTime = 0
 			prop.soundDamage = soundDamage
 			prop.destroySound = destroySound
+			if destroySound then
+				levelManager.registerPulseableProp(prop)
+			end
 		else
 			hierarchyActions:applyToDescendants(prop, { includeRoot = true }, function(o)
 				o.CollisionGroups = COLLISION_GROUP_NONE
@@ -1606,21 +1633,21 @@ levelManager = {
 			end
 		elseif config == 2 then
 			local prop = Shape(Items.claire.sofa2)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.LocalScale = Number3(1.2, 1.2, 1.2)
 			prop.LocalRotation.Y = math.pi / 2
 			prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 11, prop.Height * 0.5, ROOM_DIMENSIONS.Z * 0.5 - 25)
 		elseif config == 3 then
 			local prop = Shape(Items.claire.sofa2)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.LocalScale = Number3(1.2, 1.2, 1.2)
 			prop.LocalRotation.Y = math.pi / 2
 			prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + 12, prop.Height * 0.5 + 1, -2)
 
 			prop = Shape(Items.uevoxel.bed)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.Scale = Number3(0.7, 0.7, 0.7)
 			prop.LocalRotation.Y = -math.pi / 2
@@ -1630,8 +1657,8 @@ levelManager = {
 			local position = spawners.randomPositionInRoom(5, 0)
 			for i = 1, 4 do
 				local prop = Shape(Items.minadune.spikes)
-				levelManager.prepareProp(propsContainer, prop, nil, nil, true)
-				prop.life = 0
+				levelManager.prepareProp(propsContainer, prop, "sword_impact_5", nil, true)
+				prop.life = 255
 				prop.damageColor = Color(255, 0, 0)
 				prop.Physics = PhysicsMode.Static
 				prop.Scale = Number3(0.4, 0.5, 1.5)
@@ -1650,7 +1677,7 @@ levelManager = {
 			end
 		elseif config == 6 then
 			local prop = Shape(Items.kooow.table_round_gwcloth)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.LocalScale = Number3(0.5, 0.7, 0.5)
 			prop.Rotation.Y = math.pi / 2
@@ -1661,7 +1688,7 @@ levelManager = {
 			foodPlate.LocalPosition = Number3(35, 15, 15)
 
 			prop = Shape(Items.chocomatte.tomato_crate)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.LocalScale = Number3(0.5, 0.5, 0.5)
 			prop.LocalRotation.Y = math.pi / 2
 			prop.life = 0
@@ -1679,14 +1706,14 @@ levelManager = {
 			end
 		elseif config == 7 then
 			local prop = Shape(Items.uevoxel.gym01)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.Rotation.Y = math.pi
 			prop.LocalScale = Number3(0.6, 0.6, 0.6)
 			prop.LocalPosition = Number3(-18, 7, 4)
 
 			prop = Shape(Items.uevoxel.gym01)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.Rotation.Y = math.pi
 			prop.LocalScale = Number3(0.6, 0.6, 0.6)
@@ -1704,7 +1731,7 @@ levelManager = {
 			end
 		elseif config == 8 then
 			local prop = Shape(Items.pratamacam.table01)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.life = 0
 			prop.LocalScale = Number3(0.8, 0.8, 0.8)
 			prop.LocalPosition = Number3(0, 3, -5)
@@ -1720,21 +1747,21 @@ levelManager = {
 			end
 		elseif config == 9 then
 			local prop = Shape(Items.kooow.bathtub_with_yl_duck)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.LocalRotation.Y = math.pi / 2
 			prop.life = 0
 			prop.Scale = Number3(0.7, 0.7, 0.7)
 			prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - 24, prop.Height * 0.5 - 9, ROOM_DIMENSIONS.Z * 0.5 - 10)
 		elseif config == 10 then
 			local prop = Shape(Items.voxels.drafting_table)
-			levelManager.prepareProp(propsContainer, prop, nil, nil, true)
+			levelManager.prepareProp(propsContainer, prop, nil, "small_explosion_2", true)
 			prop.LocalPosition = Number3(-ROOM_DIMENSIONS.X * 0.5 + prop.Width * 0.5 - 6.5, prop.Height * 0.5 - 5, -8)
 			prop.Scale = Number3(0.5, 0.5, 0.5)
 			prop.LocalRotation.Y = math.pi / 2
 			prop.life = 0
 
 			prop = Shape(Items.voxels.open_upright_piano)
-			levelManager.prepareProp(propsContainer, prop, "piano_attack", nil, true)
+			levelManager.prepareProp(propsContainer, prop, "piano_attack", "piano_attack", true)
 			prop.life = 0
 			prop.LocalPosition = Number3(ROOM_DIMENSIONS.X * 0.5 - prop.Depth * 0.5 - 6, prop.Height * 0.5 - 16, 0)
 			prop.Scale = Number3(0.5, 0.5, 0.5)
@@ -1858,6 +1885,11 @@ levelManager = {
 		hierarchyActions:applyToDescendants(floor, { includeRoot = true }, function(obj)
 			if obj.Tick and not obj.poolIndex then
 				obj.Tick = nil
+			end
+
+			if obj.isPulseable then
+				levelManager.unregisterPulseableProp(obj)
+				obj.isPulseable = false
 			end
 		end)
 
@@ -2168,27 +2200,26 @@ uiManager = {
 		uiManager._HUDScreen = frame
 		frame.Width = Screen.Width
 		frame.Height = 60
-		frame.Position = Number2(0, Screen.Height - frame.Height - 5)
+		frame.Position = Number2(0, Screen.Height - frame.Height - Screen.SafeArea.Top)
 		frame.parentDidResize = function(_)
-			frame.Position = Number2(0, Screen.Height - frame.Height - 5)
+			frame.Position = Number2(0, Screen.Height - frame.Height - Screen.SafeArea.Top)
 			frame.Width = Screen.Width
 		end
 
 		-- Compteur de score en temps réel
 		local scoreContainer = ui:createFrame(gameConfig.theme.ui.backgroundColor)
 		scoreContainer:setParent(frame)
-		scoreContainer.Width = 110
-		scoreContainer.Height = 40
-		scoreContainer.Position = Number2(Screen.Width * 0.5 - scoreContainer.Width * 0.5, 10)
+		scoreContainer.Width = 130
+		scoreContainer.Height = 35
+		scoreContainer.LocalPosition = Number2(frame.Width - scoreContainer.Width - 8, frame.Height - scoreContainer.Height - 8)
 		scoreContainer.parentDidResize = function()
-			scoreContainer.Position = Number2(Screen.Width * 0.5 - scoreContainer.Width * 0.5, 10)
+			scoreContainer.LocalPosition = Number2(frame.Width - scoreContainer.Width - 8, frame.Height - scoreContainer.Height - 8)
 		end
 
 		local scoreText = ui:createText("0", Color.White, "big")
 		scoreText:setParent(scoreContainer)
 		scoreText.object.Anchor = { 0.5, 0.5 }
 		scoreText.LocalPosition = { scoreContainer.Width * 0.5, scoreContainer.Height * 0.5 }
-		scoreText.FontSize = 20
 
 		uiManager._scoreText = scoreText
 		uiManager._scoreContainer = scoreContainer
@@ -2457,6 +2488,7 @@ Client.OnStart = function()
 end
 
 Client.Tick = function(dt)
+	updateFlashes(dt)
 	playerManager.update(dt)
 	levelManager.update(dt)
 	uiManager:update(dt)
